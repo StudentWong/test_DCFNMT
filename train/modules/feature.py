@@ -1,6 +1,6 @@
 from torch import nn
 import torch
-from torchsummary import summary
+# from torchsummary import summary
 from train.config import TrackerConfig
 
 

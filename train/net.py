@@ -64,6 +64,7 @@ class DCFNTM(nn.Module):
 
         if next(self.parameters()).is_cuda:
             h0 = h0.cuda()
+        h0 = h0.requires_grad_(True)
         c0 = xf[:, 0, :, :]
 
         h, c = self.ntm.forward_batch(h0, c0, xf)
@@ -147,11 +148,11 @@ class DCFNTM(nn.Module):
             return self.forward_no_checkpoint(x_i, z_i)
 
 import copy
-from graphviz import Digraph
+# from graphviz import Digraph
 
 import torch
 from torch.autograd import Variable
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 
 
 if __name__ == "__main__":

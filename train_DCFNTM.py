@@ -1,4 +1,6 @@
 from torch import nn
+import os
+os.chdir('/home/lilium/caijihuzhuo/test_DCFNMT')
 from os.path import join, isfile, isdir
 from os import makedirs
 import shutil
@@ -25,7 +27,7 @@ parser.add_argument('--epochs', default=50, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--print-freq', '-p', default=1, type=int,
+parser.add_argument('--print-freq', '-p', default=30, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
@@ -145,9 +147,9 @@ def train(train_loader, model, criterion, optimizer, epoch, train_loss_plot):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        template = template.cuda(non_blocking=True)
-        search = search.cuda(non_blocking=True)
-        response = response.cuda(non_blocking=True)
+        template = template.cuda(non_blocking=True).requires_grad_(True)
+        search = search.cuda(non_blocking=True).requires_grad_(True)
+        response = response.cuda(non_blocking=True).requires_grad_(True)
 
         # compute output
         output = model(template, search)

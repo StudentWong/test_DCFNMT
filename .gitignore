@@ -2,5 +2,7 @@
 /.idea
 gpu_mem.log
 /train/work
+/work
 *.json
 !/train/modules/module_config.json
+*.pyc
