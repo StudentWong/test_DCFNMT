@@ -198,9 +198,9 @@ def validate(val_loader, model, criterion, val_loss_plot):
         for i, (template, search, response) in enumerate(val_loader):
 
             # compute output
-            template = template.cuda(non_blocking=True)
-            search = search.cuda(non_blocking=True)
-            response = response.cuda(non_blocking=True)
+            template = template.cuda(non_blocking=True).requires_grad_(True)
+            search = search.cuda(non_blocking=True).requires_grad_(True)
+            response = response.cuda(non_blocking=True).requires_grad_(True)
 
             # compute output
             output = model(template, search)
