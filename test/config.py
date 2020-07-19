@@ -11,7 +11,10 @@ def load_json(filename):
         data = json.load(f)
     return data
 
-
+module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
+# module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
+module_config_base = load_json(module_config_path)
+module_config = module_config_base["duke"]["default"]
 
 
 
@@ -19,12 +22,6 @@ class TrackerConfig(object):
 
     # data_root = '/home/lilium/caijihuzhuo/crop_103_1.0_0.3'
     data_root = '/home/studentw/disk3/tracker/test_DCFNMT/crop_103_1.0_0.3'
-
-    module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
-    # module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
-    module_config_base = load_json(module_config_path)
-    module_config = module_config_base["duke"]["default"]
-
     cnn_struct = module_config["cnn"]
 
     img_input_size = module_config["img_input_size"]
@@ -41,9 +38,9 @@ class TrackerConfig(object):
     apex_level = "O1"
 
     adjust_lr = False
-    T = 3
+    T = 20
     batch = 2
-    data_use = 1488
+    data_use = 5
     lr = 5e-3
     epochs = 200
     weight_decay = 1e-6
@@ -56,8 +53,10 @@ class TrackerConfig(object):
     y = gaussian_shaped_labels(output_sigma, [w_CNN_out, h_CNN_out])
     yt = torch.Tensor(y)
     label_sum = yt.sum().cuda()
+    # print(label_sum)
     yf = torch.rfft(yt.view(1, 1, w_CNN_out, h_CNN_out).cuda(), signal_ndim=2)
     label_sum = label_sum.expand_as(yt.view(1, 1, w_CNN_out, h_CNN_out))
+    # print(label_sum)
     # cos_window = torch.Tensor(np.outer(np.hanning(crop_sz_y), np.hanning(crop_sz_x))).cuda()
 
 if __name__ == "__main__":
@@ -66,8 +65,7 @@ if __name__ == "__main__":
     # nmtcell = NTM(o).cuda()
     # C0 = torch.rand((o.batch, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*100
     # C0 = C0.cuda()
-    # h0 = torch.rand((o.batch, o.dim
-    # _h_o), dtype=torch.float)*100
+    # h0 = torch.rand((o.batch, o.dim_h_o), dtype=torch.float)*100
     # h0 = h0.cuda()
     #
     # CX = torch.rand((o.batch, o.T, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*1

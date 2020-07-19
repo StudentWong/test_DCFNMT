@@ -22,22 +22,13 @@ class NTM(nn.Module):
         # self.att = torch.Tensor(config.batch, config.T, self.ntm_cell.ha, self.ntm_cell.wa).cuda()
         # self.mem = torch.Tensor(config.batch, config.T, self.ntm_cell.ha, self.ntm_cell.wa).cuda()
 
-    def forward(self,  h_o_prev, C):
+    def forward(self, h_o_prev, c_prev, x_input):
         """
-        h_o_prev: N * T * dim_h_o
-        C: N * T * C2_1 * C2_2
+        h_o_prev: N * dim_h_o
+        c_prev: N * C2_1 * C2_2
         """
-        C_t = torch.unbind(C, dim=1)  # N * C2_1 * C2_2
-        h_o_prev_t = torch.unbind(h_o_prev, dim=1)  # N * dim_h_o
-        out_h = []
-        out_C = []
-        for t in range(0, self.config.T):
-            h, c = self.ntm_cell(h_o_prev_t[t], C_t[t])
-            out_h.append(h)
-            out_C.append(c)
-        # print(len(out_C))
-        # print(out_C[1].shape)
-        return [torch.stack(out_h, dim=1), torch.stack(out_C, dim=1)]
+        h, c = self.ntm_cell(h_o_prev, c_prev, x_input)
+        return h, c
 
 
     def forward_batch(self, h0, c0, c_x):

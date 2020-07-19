@@ -46,7 +46,8 @@ def gaussian_shaped_labels(sigma, sz):
     return g.astype(np.float32)
 
 
-def assign_train_test(config, train_test_factor=0.2, temp_distru=0.1, search_distru=0.7):
+def assign_train_test(config, train_test_factor=0.2, temp_distru=[0.1, 0.3, 0.5],
+                      search_distru=[0.5, 0.7]):
     snp_len = config.data_use
     test_len = int(snp_len*train_test_factor)
     test_ind = np.random.choice(snp_len, test_len, replace=False).tolist()
@@ -66,7 +67,7 @@ def assign_train_test(config, train_test_factor=0.2, temp_distru=0.1, search_dis
 
 class VID(data.Dataset):
     def __init__(self, snp_index, config,
-                 temp_distru=0.1, search_distru=0.7,
+                 temp_distru=[0.1, 0.3], search_distru=[0.5, 0.7],
                  n=2, train=True):
         self.root = config.data_root
         self.snp_index = snp_index
@@ -81,22 +82,25 @@ class VID(data.Dataset):
         self.output_sigma = config.output_sigma
 
     def __getitem__(self, item):
-        x = np.zeros(shape=(self.T_len, 3, self.img_size[0], self.img_size[1]), dtype=np.float)
-        z = np.zeros(shape=(self.T_len, 3, self.img_size[0], self.img_size[1]), dtype=np.float)
+        x = np.zeros(shape=(self.T_len, 3, self.img_size[0], self.img_size[1]), dtype=np.float32)
+        z = np.zeros(shape=(self.T_len, 3, self.img_size[0], self.img_size[1]), dtype=np.float32)
 
         x_bias = np.zeros(shape=(self.T_len, 2), dtype=np.int)
         z_bias = np.zeros(shape=(self.T_len, 2), dtype=np.int)
 
         if self.train:
-            res = np.zeros(shape=(self.T_len, self.res_size[0], self.res_size[1]), dtype=np.float)
+            res = np.zeros(shape=(self.T_len, self.res_size[0], self.res_size[1]), dtype=np.float32)
 
-        index = self.snp_index[item % self.n]
+        index = self.snp_index[int(item / self.n)]
+
         folder_name = "{:08d}".format(index)
         folder_frame_files = glob.glob(join(self.root, folder_name, "tp_f*"))
         folder_frame_num = len(folder_frame_files)
 
         begin_num = np.random.randint(0, folder_frame_num - self.T_len + 1)
-        # print(begin_num)
+
+        stride = int((folder_frame_num-begin_num+1)/self.T_len)
+
         temp_name1 = 'tp_f{:05d}.jpg'.format(begin_num)
         temp_path = join(self.root, folder_name, temp_name1)
         x_bias[0] = [0, 0]
@@ -104,16 +108,19 @@ class VID(data.Dataset):
         # cv2.imshow("1", imt)
         # cv2.waitKey(0)
         x[0] = np.transpose(imt, (2, 0, 1)).astype(np.float32) - self.mean
-        for i in range(begin_num + 1, begin_num + self.T_len):
+        for i in range(begin_num + stride, begin_num + self.T_len*stride, stride):
+
             rand_num = np.random.randint(0, self.n)
+            # print(self.temp_distru)
+            t_d = np.random.choice(self.temp_distru, 1, replace=False)[0]
             name = 'f{:05d}_d{:1.1f}_n{:01d}*'.format(i,
-                                                      self.temp_distru,
+                                                      t_d,
                                                       rand_num)
             temp_pathN = glob.glob(join(self.root, folder_name, name))
             xy_bias = temp_pathN[0].replace(self.root+'/'+folder_name+'/', '')
             xy_bias = xy_bias.replace(
                 'f{:05d}_d{:1.1f}_n{:01d}_'.format(i,
-                                                   self.temp_distru,
+                                                   t_d,
                                                    rand_num),
                 ''
             )
@@ -123,24 +130,25 @@ class VID(data.Dataset):
             x_bias_str = int(xy_bias.split('_')[0])
             y_bias_str = int(xy_bias.split('_')[1])
 
-            x_bias[i-begin_num] = [x_bias_str, y_bias_str]
+            x_bias[int((i-begin_num)/stride)] = [x_bias_str, y_bias_str]
 
             im = cv2.imread(temp_pathN[0])
-            x[i-begin_num] = np.transpose(im, (2, 0, 1)).astype(np.float32) - self.mean
+            x[int((i-begin_num)/stride)] = np.transpose(im, (2, 0, 1)).astype(np.float32) - self.mean
             # cv2.imshow("1", im)
             # cv2.waitKey(0)
             # x
 
-        for i in range(begin_num, begin_num + self.T_len):
+        for i in range(begin_num, begin_num + self.T_len*stride, stride):
             rand_num = np.random.randint(0, self.n)
+            s_d = np.random.choice(self.search_distru, 1, replace=False)[0]
             name = 'f{:05d}_d{:1.1f}_n{:01d}*'.format(i,
-                                                      self.search_distru,
+                                                      s_d,
                                                       rand_num)
             temp_pathN = glob.glob(join(self.root, folder_name, name))
             xy_bias = temp_pathN[0].replace(self.root+'/'+folder_name+'/', '')
             xy_bias = xy_bias.replace(
                 'f{:05d}_d{:1.1f}_n{:01d}_'.format(i,
-                                                   self.search_distru,
+                                                   s_d,
                                                    rand_num),
                 ''
             )
@@ -150,15 +158,15 @@ class VID(data.Dataset):
             x_bias_str = int(xy_bias.split('_')[0])
             y_bias_str = int(xy_bias.split('_')[1])
 
-            z_bias[i-begin_num] = [x_bias_str, y_bias_str]
+            z_bias[int((i-begin_num)/stride)] = [x_bias_str, y_bias_str]
 
             im = cv2.imread(temp_pathN[0])
-            z[i-begin_num] = np.transpose(im, (2, 0, 1)).astype(np.float32) - self.mean
+            z[int((i-begin_num)/stride)] = np.transpose(im, (2, 0, 1)).astype(np.float32) - self.mean
 
             if self.train:
-                res[i-begin_num] = gaussian_shaped_labels_bias(self.output_sigma,
+                res[int((i-begin_num)/stride)] = gaussian_shaped_labels_bias(self.output_sigma,
                                                                   self.res_size,
-                                                                  z_bias[i-begin_num])
+                                                                  -z_bias[int((i-begin_num)/stride)])
 
         if self.train:
             return x, z, res
@@ -168,56 +176,69 @@ class VID(data.Dataset):
     def __len__(self):
         return len(self.snp_index) * self.n
 
-
-if __name__ == '__main__':
-    config = TrackerConfig()
-    train, train_i, test, test_i = assign_train_test(config)
-    xt, zt, r = train[1]
-    #xte, zte, r = test[1]
-    print(r.shape)
-    print(test_i)
-    # data = VID([0, 3], config=config, train=False)
-    # x, z = data[0]
-    #
-    for i in range(0, config.T):
-
-        cv2.imshow("1", (xt[i]+train.mean).transpose((1, 2, 0)).astype(np.uint8))
-        cv2.waitKey(0)
-        cv2.imshow("1", (zt[i] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
-        cv2.waitKey(0)
-        cv2.imshow("1", (r[i]))
-        cv2.waitKey(0)
-    #
-    #     imxfft = torch.rfft(torch.tensor(x[0], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
-    #
-    #     imzfft = torch.rfft(torch.tensor(z[i], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
-    #     #print(imxfft.shape)
-    #
-    #     def complex_mulconj(x, z):
-    #         out_real = x[..., 0] * z[..., 0] + x[..., 1] * z[..., 1]
-    #         out_imag = x[..., 1] * z[..., 0] - x[..., 0] * z[..., 1]
-    #         return torch.stack((out_real, out_imag), -1)
-    #
-    #
-    #     def complex_mul(x, z):
-    #         out_real = x[..., 0] * z[..., 0] - x[..., 1] * z[..., 1]
-    #         out_imag = x[..., 0] * z[..., 1] + x[..., 1] * z[..., 0]
-    #         return torch.stack((out_real, out_imag), -1)
-    #
-    #     y = complex_mulconj(imxfft, imzfft)
-    #     yy = torch.sum(complex_mulconj(imxfft, imzfft), dim=1, keepdim=True)
-    #     response = torch.irfft(y, signal_ndim=2, onesided=True).numpy()
-    #     res = (response - np.ones_like(response) * np.min(response)) / (np.max(response) - np.min(response))
-    #
-    #
-    #     yc = torch.nn.functional.conv2d(torch.tensor(x[0], dtype=torch.float).unsqueeze(0),
-    #                                     torch.tensor(z[i], dtype=torch.float).unsqueeze(0),
-    #                                     stride=[1, 1], padding=[100, 100])[0].numpy()
-    #     cv2.imshow("1", res[0].transpose(1, 2, 0))
-    #     cv2.waitKey(0)
-    #
-    #     resc = (yc - np.ones_like(yc) * np.min(yc)) / (np.max(yc) - np.min(yc))
-    #
-    #     cv2.imshow("1", resc.transpose(1, 2, 0))
-    #     cv2.waitKey(0)
+#
+# if __name__ == '__main__':
+#     config = TrackerConfig()
+#     train, train_i, test, test_i = assign_train_test(config, temp_distru=[0.1, 0.3, 0.5])
+#     print(train_i)
+#     xt, zt, r = train[50]
+#     #xte, zte, r = test[1]
+#     # print(r.shape)
+#     # print(test_i)
+#     # data = VID([0, 3], config=config, train=False)
+#     # x, z = data[0]
+#     #
+#     for i in range(0, config.T):
+#
+#         cv2.imshow("1", (xt[i]+train.mean).transpose((1, 2, 0)).astype(np.uint8))
+#         cv2.waitKey(0)
+#         cv2.imshow("1", (zt[i] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
+#         cv2.waitKey(0)
+#         cv2.imshow("1", (r[i]))
+#         cv2.waitKey(0)
+#
+#         imxfft = torch.rfft(torch.tensor(xt[0], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
+#
+#         imzfft = torch.rfft(torch.tensor(zt[i], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
+#         #print(imxfft.shape)
+#
+#
+#         def complex_mulconj(x, z):
+#             out_real = x[..., 0] * z[..., 0] + x[..., 1] * z[..., 1]
+#             out_imag = x[..., 1] * z[..., 0] - x[..., 0] * z[..., 1]
+#             return torch.stack((out_real, out_imag), -1)
+#
+#
+#         def complex_mul(x, z):
+#             out_real = x[..., 0] * z[..., 0] - x[..., 1] * z[..., 1]
+#             out_imag = x[..., 0] * z[..., 1] + x[..., 1] * z[..., 0]
+#             return torch.stack((out_real, out_imag), -1)
+#
+#
+#         y = gaussian_shaped_labels(config.output_sigma, config.img_input_size)
+#         yt = torch.Tensor(y)
+#         yf = torch.rfft(yt.view(1, 1, config.img_input_size[0], config.img_input_size[1]), signal_ndim=2)
+#
+#         kzzf = torch.sum(torch.sum(imxfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
+#         kxzf = torch.sum(complex_mulconj(imzfft, imxfft), dim=1, keepdim=True)
+#         alphaf = yf / (kzzf + config.lambda0)  # very Ugly
+#         response_feature = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2).numpy()
+#
+#         res_feature =(response_feature - np.ones_like(response_feature) * np.min(response_feature)) \
+#                      / (np.max(response_feature) - np.min(response_feature))
+#
+#
+#
+#         y = complex_mulconj(imzfft, imxfft)
+#
+#         response_im = torch.irfft(y, signal_ndim=2, onesided=True).numpy()
+#         res_im = (response_im - np.ones_like(response_im) * np.min(response_im)) / (np.max(response_im) - np.min(response_im))
+#
+#
+#
+#         cv2.imshow("1", res_feature[0].transpose(1, 2, 0))
+#         cv2.waitKey(0)
+#         # print(res_im[0].shape)
+#         cv2.imshow("1", res_im[0].transpose(1, 2, 0))
+#         cv2.waitKey(0)
 

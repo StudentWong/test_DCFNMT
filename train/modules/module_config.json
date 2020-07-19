@@ -46,7 +46,7 @@
                     "in_features": 32,
                     "out_features": 32,
                     "conv_kernels": 3,
-                    "activate_fun": "none",
+                    "activate_fun": "tanh",
                     "out_sizes": [99, 99],
                     "bn": -1,
                     "dropout": -1

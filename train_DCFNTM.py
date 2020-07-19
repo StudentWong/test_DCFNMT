@@ -1,6 +1,6 @@
 from torch import nn
 import os
-os.chdir('/home/lilium/caijihuzhuo/test_DCFNMT')
+#os.chdir('/home/lilium/caijihuzhuo/test_DCFNMT')
 from os.path import join, isfile, isdir
 from os import makedirs
 import shutil
@@ -29,7 +29,7 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--print-freq', '-p', default=30, type=int,
                     metavar='N', help='print frequency (default: 10)')
-parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
+parser.add_argument('-j', '--workers', default=1, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
 parser.add_argument('-b', '--batch-size', default=32, type=int,
                     metavar='N', help='mini-batch size (default: 32)')
@@ -205,6 +205,24 @@ def validate(val_loader, model, criterion, val_loss_plot):
             # compute output
             output = model(template, search)
             loss = criterion(output, response) / (args.batch_size * gpu_num)
+
+
+            x = template.cpu().detach().numpy()[0]
+            z = search.cpu().detach().numpy()[0]
+            r = response.cpu().detach().numpy()[0]
+
+            for i in range(0, 2):
+                cv2.imshow("1", (x[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
+                cv2.waitKey(0)
+                cv2.imshow("1", (z[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
+                cv2.waitKey(0)
+                res = output.cpu().detach().numpy()[0][i]
+                res = (res - np.ones_like(res) * np.min(res)) / (np.max(res) - np.min(res))
+                print(res.shape)
+                cv2.imshow("1", res)
+                cv2.waitKey(0)
+                cv2.imshow("1", (r[i]))
+                cv2.waitKey(0)
 
             # measure accuracy and record loss
             losses.update(loss.item())
