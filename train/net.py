@@ -37,6 +37,10 @@ class DCFNTM(nn.Module):
             self.usecheckpoint = True
         else:
             self.usecheckpoint = usecheckpoint
+
+        if config.C_norm:
+            self.init_x_norm = torch.nn.LayerNorm([config.dim_C2_1, config.dim_C2_2],
+                                                  elementwise_affine=config.norm_learnable)
         self.ntm = NTM(config, self.usecheckpoint)
 
     def checkpoint_seg1_x(self, x_i):
@@ -67,7 +71,7 @@ class DCFNTM(nn.Module):
             h0 = h0.cuda()
         h0 = h0.requires_grad_(True)
         c0 = xf[:, 0, :, :]
-
+        c0 = self.init_x_norm(c0)
         h, c = self.ntm.forward_batch(h0, c0, xf)
 
         c = c.permute(0, 1, 3, 2).contiguous()
@@ -83,9 +87,10 @@ class DCFNTM(nn.Module):
         kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
         alphaf = self.yf.clone().to(device=zf_btcwh.device) / (kzzf + self.lambda0)  # very Ugly
         response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
-        norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
-        response = (response / norm_scal.expand_as(response)) * \
-                   self.label_sum.clone().to(device=zf_btcwh.device).expand_as(response)
+        # norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
+        # response = (response / norm_scal.expand_as(response)) * \
+        #            self.label_sum.clone().to(device=zf_btcwh.device).expand_as(response)
+
         # print(response.shape)
         # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
         assert response.is_contiguous(), "view not contiguous"
@@ -136,9 +141,10 @@ class DCFNTM(nn.Module):
         kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
         alphaf = self.yf.clone().to(device=z.device) / (kzzf + self.lambda0)  # very Ugly
         response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
-        norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
-        response = (response / norm_scal.expand_as(response)) * \
-                   self.label_sum.clone().to(device=zf_btcwh.device).expand_as(response)
+        # norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
+        # response = (response / norm_scal.expand_as(response)) * \
+        #            self.label_sum.clone().to(device=zf_btcwh.device).expand_as(response)
+
         # print(response.shape)
         # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
         return response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out)
@@ -154,18 +160,20 @@ class DCFNTM(nn.Module):
         else:
             return self.forward_no_checkpoint(x_i, z_i)
 
+
 import copy
 # from graphviz import Digraph
 
 import torch
 from torch.autograd import Variable
+
 # from torch.utils.tensorboard import SummaryWriter
 
 
 if __name__ == "__main__":
     config = TrackerConfig()
     net1 = DCFNTM(config, True)
-    #net2 = DCFNTM(config, False).cuda()
+    # net2 = DCFNTM(config, False).cuda()
     net2 = copy.deepcopy(net1)
     net2.usecheckpoint = False
     net2.ntm = copy.deepcopy(net1.ntm)
@@ -174,11 +182,12 @@ if __name__ == "__main__":
     net1 = net1.cuda()
     net2 = net2.cuda()
 
-    x = torch.rand((config.batch, config.T, 3, config.img_input_size[0], config.img_input_size[1]), dtype=torch.float) * 1
+    x = torch.rand((config.batch, config.T, 3, config.img_input_size[0], config.img_input_size[1]),
+                   dtype=torch.float) * 1
     x = x.cuda()
-    z = torch.rand((config.batch, config.T, 3, config.img_input_size[0], config.img_input_size[1]), dtype=torch.float) * 100
+    z = torch.rand((config.batch, config.T, 3, config.img_input_size[0], config.img_input_size[1]),
+                   dtype=torch.float) * 100
     z = z.cuda()
-
 
     # checkpoint
     x1 = x.clone().requires_grad_(True)
@@ -195,9 +204,9 @@ if __name__ == "__main__":
     optim1.zero_grad()
 
     with amp.scale_loss(loss1, optim1) as scaled_loss:
-       scaled_loss.backward()
+        scaled_loss.backward()
 
-    #loss1.backward()
+    # loss1.backward()
     optim1.step()
     for name, parms in net1.named_parameters():
         print('-->name:', name, '-->grad_requirs:', parms.requires_grad,
@@ -205,14 +214,13 @@ if __name__ == "__main__":
               ' -->value:', parms.data)
     # gpu_memory_log()
 
-
-    #no_checkpoint
+    # no_checkpoint
     x2 = x.clone().requires_grad_(True)
     z2 = z.clone().requires_grad_(True)
     losser2 = nn.MSELoss()
     optim2 = torch.optim.Adam(net2.parameters(), 1e-3)
     r2 = net2.forward_no_checkpoint_full_version(x2, z2)
-    rm2 = r2.mean(dim=(1,2))
+    rm2 = r2.mean(dim=(1, 2))
     ##writer = SummaryWriter('runs/fashion_mnist_experiment_1')
     ##writer.add_graph(net2, [x2, z2])
     ##writer.close()
@@ -222,15 +230,12 @@ if __name__ == "__main__":
     optim2.zero_grad()
     for name, parms in net2.named_parameters():
         print('-->name:', name, '-->grad_requirs:', parms.requires_grad,
-              #' -->grad_value:', parms.grad,
+              # ' -->grad_value:', parms.grad,
               ' -->value:', parms.data)
     # gpu_memory_log()
-
 
     # with torch.no_grad():
     #     r = net.forward(x, z)
     #     print(r)
 
-    #gpu_memory_log()
-
-
+    # gpu_memory_log()

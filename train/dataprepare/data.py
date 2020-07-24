@@ -71,7 +71,7 @@ class VID(data.Dataset):
                  n=2, train=True):
         self.root = config.data_root
         self.snp_index = snp_index
-        self.mean = np.expand_dims(np.expand_dims(np.array([127, 127, 117]), axis=1), axis=1).astype(np.float32)
+        self.mean = config.net_average_image
         self.T_len = config.T
         self.temp_distru = temp_distru
         self.search_distru = search_distru
@@ -177,68 +177,71 @@ class VID(data.Dataset):
         return len(self.snp_index) * self.n
 
 #
-# if __name__ == '__main__':
-#     config = TrackerConfig()
-#     train, train_i, test, test_i = assign_train_test(config, temp_distru=[0.1, 0.3, 0.5])
-#     print(train_i)
-#     xt, zt, r = train[50]
-#     #xte, zte, r = test[1]
-#     # print(r.shape)
-#     # print(test_i)
-#     # data = VID([0, 3], config=config, train=False)
-#     # x, z = data[0]
-#     #
-#     for i in range(0, config.T):
-#
-#         cv2.imshow("1", (xt[i]+train.mean).transpose((1, 2, 0)).astype(np.uint8))
-#         cv2.waitKey(0)
-#         cv2.imshow("1", (zt[i] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
-#         cv2.waitKey(0)
-#         cv2.imshow("1", (r[i]))
-#         cv2.waitKey(0)
-#
-#         imxfft = torch.rfft(torch.tensor(xt[0], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
-#
-#         imzfft = torch.rfft(torch.tensor(zt[i], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
-#         #print(imxfft.shape)
-#
-#
-#         def complex_mulconj(x, z):
-#             out_real = x[..., 0] * z[..., 0] + x[..., 1] * z[..., 1]
-#             out_imag = x[..., 1] * z[..., 0] - x[..., 0] * z[..., 1]
-#             return torch.stack((out_real, out_imag), -1)
-#
-#
-#         def complex_mul(x, z):
-#             out_real = x[..., 0] * z[..., 0] - x[..., 1] * z[..., 1]
-#             out_imag = x[..., 0] * z[..., 1] + x[..., 1] * z[..., 0]
-#             return torch.stack((out_real, out_imag), -1)
-#
-#
-#         y = gaussian_shaped_labels(config.output_sigma, config.img_input_size)
-#         yt = torch.Tensor(y)
-#         yf = torch.rfft(yt.view(1, 1, config.img_input_size[0], config.img_input_size[1]), signal_ndim=2)
-#
-#         kzzf = torch.sum(torch.sum(imxfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
-#         kxzf = torch.sum(complex_mulconj(imzfft, imxfft), dim=1, keepdim=True)
-#         alphaf = yf / (kzzf + config.lambda0)  # very Ugly
-#         response_feature = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2).numpy()
-#
-#         res_feature =(response_feature - np.ones_like(response_feature) * np.min(response_feature)) \
-#                      / (np.max(response_feature) - np.min(response_feature))
-#
-#
-#
-#         y = complex_mulconj(imzfft, imxfft)
-#
-#         response_im = torch.irfft(y, signal_ndim=2, onesided=True).numpy()
-#         res_im = (response_im - np.ones_like(response_im) * np.min(response_im)) / (np.max(response_im) - np.min(response_im))
-#
-#
-#
-#         cv2.imshow("1", res_feature[0].transpose(1, 2, 0))
-#         cv2.waitKey(0)
-#         # print(res_im[0].shape)
-#         cv2.imshow("1", res_im[0].transpose(1, 2, 0))
-#         cv2.waitKey(0)
+if __name__ == '__main__':
+    config = TrackerConfig()
+    train, train_i, test, test_i = assign_train_test(config, temp_distru=[0.1, 0.3, 0.5])
+    print(train_i)
+    xt, zt, r = train[50]
+    #xte, zte, r = test[1]
+    # print(r.shape)
+    # print(test_i)
+    # data = VID([0, 3], config=config, train=False)
+    # x, z = data[0]
+    #
+    for i in range(0, config.T):
+
+        cv2.imshow("1", (xt[i]+train.mean).transpose((1, 2, 0)).astype(np.uint8))
+        cv2.waitKey(0)
+        cv2.imshow("1", (zt[i] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
+        cv2.waitKey(0)
+        cv2.imshow("1", (r[i]))
+        cv2.waitKey(0)
+
+        imxfft = torch.rfft(torch.tensor(xt[0], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
+
+        imzfft = torch.rfft(torch.tensor(zt[i], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)
+        #print(imxfft.shape)
+
+
+        def complex_mulconj(x, z):
+            out_real = x[..., 0] * z[..., 0] + x[..., 1] * z[..., 1]
+            out_imag = x[..., 1] * z[..., 0] - x[..., 0] * z[..., 1]
+            return torch.stack((out_real, out_imag), -1)
+
+
+        def complex_mul(x, z):
+            out_real = x[..., 0] * z[..., 0] - x[..., 1] * z[..., 1]
+            out_imag = x[..., 0] * z[..., 1] + x[..., 1] * z[..., 0]
+            return torch.stack((out_real, out_imag), -1)
+
+
+        y = gaussian_shaped_labels(config.output_sigma, config.img_input_size)
+        yt = torch.Tensor(y)
+        yf = torch.rfft(yt.view(1, 1, config.img_input_size[0], config.img_input_size[1]), signal_ndim=2)
+
+        kzzf = torch.sum(torch.sum(imxfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
+        kxzf = torch.sum(complex_mulconj(imzfft, imxfft), dim=1, keepdim=True)
+        alphaf = yf / (kzzf + config.lambda0)  # very Ugly
+        response_feature = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2).numpy()
+
+        res_feature =(response_feature - np.ones_like(response_feature) * np.min(response_feature)) \
+                     / (np.max(response_feature) - np.min(response_feature))
+
+
+
+        y = complex_mulconj(imzfft, imxfft)
+        print(y.shape)
+        y = y.sum(dim=1, keepdim=True)
+        response_im = torch.irfft(y, signal_ndim=2, onesided=True).numpy()
+        response_im = response_im + train.mean
+        print(response_im)
+        #response_im = (response_im - np.ones_like(response_im) * np.min(response_im)) / (np.max(response_im) - np.min(response_im))
+
+
+
+        cv2.imshow("1", res_feature[0].transpose(1, 2, 0))
+        cv2.waitKey(0)
+        # print(res_im[0].shape)
+        cv2.imshow("1", response_im[0].transpose(1, 2, 0))
+        cv2.waitKey(0)
 

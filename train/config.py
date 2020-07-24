@@ -25,24 +25,29 @@ class TrackerConfig(object):
     module_config_base = load_json(module_config_path)
     module_config = module_config_base["duke"]["default"]
 
+    mult_model = True
+    C_norm = True
+    norm_learnable = True
+
     cnn_struct = module_config["cnn"]
 
     img_input_size = module_config["img_input_size"]
     w_CNN_out = cnn_struct[-2]['out_sizes'][0]
     h_CNN_out = cnn_struct[-2]['out_sizes'][1]
+    net_input_size = [w_CNN_out, h_CNN_out]
     c_CNN_out = cnn_struct[-2]['out_features']
     CNN_padding = False
-    key_feature_num = 4
+    key_feature_num = 8
     dim_h_o = c_CNN_out * key_feature_num
     dim_C2_1 = w_CNN_out * h_CNN_out
     dim_C2_2 = c_CNN_out
 
     use_apex = True
-    apex_level = "O1"
+    apex_level = "O0"
 
     adjust_lr = False
-    T = 3
-    batch = 2
+    T = 5
+    batch = 5
     data_use = 1488
     lr = 5e-3
     epochs = 200
@@ -53,6 +58,16 @@ class TrackerConfig(object):
     output_sigma_factor = 0.1
     output_sigma = img_input_size[0] / (1 + padding) * output_sigma_factor
 
+
+    num_scale = 5
+    # num_scale = 5
+    scale_step = 1.0275
+    # scale_step = 1.3
+    scale_factor = scale_step ** (np.arange(num_scale) - num_scale / 2)
+    # scale_factor = scale_step ** (np.arange(num_scale) - int(num_scale / 2))
+    scale_penalty = 0.9925
+    scale_penalties = scale_penalty ** (np.abs((np.arange(num_scale) - num_scale / 2)))
+    net_average_image = np.expand_dims(np.expand_dims(np.array([127, 127, 117]), axis=1), axis=1).astype(np.float32)
     y = gaussian_shaped_labels(output_sigma, [w_CNN_out, h_CNN_out])
     yt = torch.Tensor(y)
     label_sum = yt.sum().cuda()
@@ -61,26 +76,53 @@ class TrackerConfig(object):
     # cos_window = torch.Tensor(np.outer(np.hanning(crop_sz_y), np.hanning(crop_sz_x))).cuda()
 
 if __name__ == "__main__":
-    print("{:.3e}".format(3.65))
-    # o = TrackerConfig()
-    # nmtcell = NTM(o).cuda()
-    # C0 = torch.rand((o.batch, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*100
-    # C0 = C0.cuda()
-    # h0 = torch.rand((o.batch, o.dim
-    # _h_o), dtype=torch.float)*100
-    # h0 = h0.cuda()
+    # cosine_similarity = torch.nn.CosineSimilarity(dim=3)
+    # a = torch.range(0, 39, dtype=torch.float)
+    # assert a.is_contiguous(), "not contiguous"
+    # c = a.view((2, 2, 2, 5))
+    # print(c)
+    # assert c.is_contiguous(), "not contiguous"
+    # c = c.view((2, 4, 5))
     #
-    # CX = torch.rand((o.batch, o.T, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*1
-    # CX = CX.cuda()
+    # c = c.unsqueeze(2)
     #
+    # # c = c.view((2, 4, 3, 5))
+    # c = c.expand((2, 4, 3, 5))
+    # #c = c.contiguous()
+    # #assert c.is_contiguous(), "not contiguous"
+    # #c = c.view(2, 4, 15)
     #
-    # h,c = nmtcell.forward_batch(h0, C0, CX)
-    #
+    # #print(c)
+    # b = torch.range(0, 29, dtype=torch.float)
+    # assert b.is_contiguous(), "not contiguous"
+    # b = b.view(2, 3, 5)
+    # print(b)
+    # b = b.unsqueeze(1).expand(2, 4, 3, 5)
+    # d = cosine_similarity(c, b)
+    # print(d)
+    # print(np.cos([25, 26, 27, 28, 29], [30, 31, 32, 33, 34]))
+
+
+
+
+    o = TrackerConfig()
+    nmtcell = NTM(o,True).cuda()
+    C0 = torch.rand((o.batch, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*100
+    C0 = C0.cuda()
+    h0 = torch.rand((o.batch, o.dim_h_o), dtype=torch.float)*100
+    h0 = h0.cuda()
+
+    CX = torch.rand((o.batch, o.T, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*1
+    CX = CX.cuda()
+
+
+    h,c = nmtcell.forward_batch(h0, C0, CX)
+
     # print(h)
     # print(h.shape)
     # print(c)
     # print(c.shape)
-    # gpu_memory_log()
+    gpu_memory_log()
 
 # class TrackerConfig(object):
 #     # These are the default hyper-params for DCFNet

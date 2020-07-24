@@ -35,7 +35,7 @@
             "cnn": [
                 {
                     "in_features": 3,
-                    "out_features": 32,
+                    "out_features": 16,
                     "conv_kernels": 3,
                     "activate_fun": "relu",
                     "out_sizes": [101, 101],
@@ -43,10 +43,10 @@
                     "dropout": -1
                 },
                 {
-                    "in_features": 32,
+                    "in_features": 16,
                     "out_features": 32,
                     "conv_kernels": 3,
-                    "activate_fun": "tanh",
+                    "activate_fun": "none",
                     "out_sizes": [99, 99],
                     "bn": -1,
                     "dropout": -1

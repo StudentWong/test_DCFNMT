@@ -28,8 +28,9 @@ class TrackerConfig(object):
     w_CNN_out = cnn_struct[-2]['out_sizes'][0]
     h_CNN_out = cnn_struct[-2]['out_sizes'][1]
     c_CNN_out = cnn_struct[-2]['out_features']
+    net_input_size = [w_CNN_out, h_CNN_out]
     CNN_padding = False
-    key_feature_num = 4
+    key_feature_num = 8
     dim_h_o = c_CNN_out * key_feature_num
     dim_C2_1 = w_CNN_out * h_CNN_out
     dim_C2_2 = c_CNN_out
@@ -49,7 +50,7 @@ class TrackerConfig(object):
     padding = 1.0
     output_sigma_factor = 0.1
     output_sigma = img_input_size[0] / (1 + padding) * output_sigma_factor
-
+    net_average_image = np.expand_dims(np.expand_dims(np.array([127, 127, 117]), axis=1), axis=1).astype(np.float32)
     y = gaussian_shaped_labels(output_sigma, [w_CNN_out, h_CNN_out])
     yt = torch.Tensor(y)
     label_sum = yt.sum().cuda()
@@ -57,7 +58,7 @@ class TrackerConfig(object):
     yf = torch.rfft(yt.view(1, 1, w_CNN_out, h_CNN_out).cuda(), signal_ndim=2)
     label_sum = label_sum.expand_as(yt.view(1, 1, w_CNN_out, h_CNN_out))
     # print(label_sum)
-    # cos_window = torch.Tensor(np.outer(np.hanning(crop_sz_y), np.hanning(crop_sz_x))).cuda()
+    cos_window = torch.Tensor(np.outer(np.hanning(w_CNN_out), np.hanning(w_CNN_out))).cuda()
 
 if __name__ == "__main__":
     print("{:.3e}".format(3.65))
