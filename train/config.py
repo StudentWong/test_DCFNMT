@@ -17,11 +17,11 @@ def load_json(filename):
 
 class TrackerConfig(object):
 
-    # data_root = '/home/lilium/caijihuzhuo/crop_103_1.0_0.3'
-    data_root = '/home/studentw/disk3/tracker/test_DCFNMT/crop_103_1.0_0.3'
+    data_root = '/home/lilium/caijihuzhuo/crop_103_1.0_0.3'
+    #data_root = '/home/studentw/disk3/tracker/test_DCFNMT/crop_103_1.0_0.3'
 
-    module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
-    # module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
+    #module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
+    module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
     module_config_base = load_json(module_config_path)
     module_config = module_config_base["duke"]["default"]
 
@@ -46,8 +46,8 @@ class TrackerConfig(object):
     apex_level = "O0"
 
     adjust_lr = False
-    T = 5
-    batch = 5
+    T = 12
+    batch = 12
     data_use = 1488
     lr = 5e-3
     epochs = 200

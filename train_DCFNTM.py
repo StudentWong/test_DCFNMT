@@ -155,7 +155,7 @@ def train(train_loader, model, criterion, optimizer, epoch, train_loss_plot):
         output = model(template, search)
         # print(output.shape)
         # print(response.shape)
-        loss = criterion(output, response) / template.size(0)  # criterion = nn.MSEloss
+        loss = criterion(output, response) / (config.batch*config.T)  # criterion = nn.MSEloss
 
         # measure accuracy and record loss
         losses.update(loss.item())
@@ -204,25 +204,25 @@ def validate(val_loader, model, criterion, val_loss_plot):
 
             # compute output
             output = model(template, search)
-            loss = criterion(output, response) / (args.batch_size * gpu_num)
+            loss = criterion(output, response) / (config.batch * config.T * gpu_num)
 
 
-            x = template.cpu().detach().numpy()[0]
-            z = search.cpu().detach().numpy()[0]
-            r = response.cpu().detach().numpy()[0]
+#            x = template.cpu().detach().numpy()[0]
+#            z = search.cpu().detach().numpy()[0]
+#            r = response.cpu().detach().numpy()[0]
 
-            for i in range(0, 2):
-                cv2.imshow("1", (x[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
-                cv2.waitKey(0)
-                cv2.imshow("1", (z[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
-                cv2.waitKey(0)
-                res = output.cpu().detach().numpy()[0][i]
-                res = (res - np.ones_like(res) * np.min(res)) / (np.max(res) - np.min(res))
-                print(res.shape)
-                cv2.imshow("1", res)
-                cv2.waitKey(0)
-                cv2.imshow("1", (r[i]))
-                cv2.waitKey(0)
+#            for i in range(0, 2):
+#                cv2.imshow("1", (x[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
+#                cv2.waitKey(0)
+#                cv2.imshow("1", (z[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
+#                cv2.waitKey(0)
+#                res = output.cpu().detach().numpy()[0][i]
+#                res = (res - np.ones_like(res) * np.min(res)) / (np.max(res) - np.min(res))
+#                print(res.shape)
+#                cv2.imshow("1", res)
+#                cv2.waitKey(0)
+#                cv2.imshow("1", (r[i]))
+#                cv2.waitKey(0)
 
             # measure accuracy and record loss
             losses.update(loss.item())
@@ -243,7 +243,7 @@ def validate(val_loader, model, criterion, val_loss_plot):
     return losses.avg, val_loss_plot
 
 
-for epoch in range(args.start_epoch, args.epochs):
+for epoch in range(args.start_epoch, config.epochs):
     if config.adjust_lr:
         adjust_learning_rate(optimizer, epoch)
 
