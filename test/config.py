@@ -11,24 +11,31 @@ def load_json(filename):
         data = json.load(f)
     return data
 
-module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
-# module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
-module_config_base = load_json(module_config_path)
-module_config = module_config_base["duke"]["default"]
-
-
 
 class TrackerConfig(object):
 
-    # data_root = '/home/lilium/caijihuzhuo/crop_103_1.0_0.3'
+    #data_root = '/home/lilium/caijihuzhuo/crop_103_1.0_0.3'
     data_root = '/home/studentw/disk3/tracker/test_DCFNMT/crop_103_1.0_0.3'
+
+    module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
+    #module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
+    module_config_base = load_json(module_config_path)
+    module_config = module_config_base["duke"]["default"]
+
+    mult_model = True
+    direct_correlation = True
+    C_norm = True
+    norm_learnable = True
+    Z_attention = True
+    long_term = True
+
     cnn_struct = module_config["cnn"]
 
     img_input_size = module_config["img_input_size"]
     w_CNN_out = cnn_struct[-2]['out_sizes'][0]
     h_CNN_out = cnn_struct[-2]['out_sizes'][1]
-    c_CNN_out = cnn_struct[-2]['out_features']
     net_input_size = [w_CNN_out, h_CNN_out]
+    c_CNN_out = cnn_struct[-2]['out_features']
     CNN_padding = False
     key_feature_num = 8
     dim_h_o = c_CNN_out * key_feature_num
@@ -36,12 +43,12 @@ class TrackerConfig(object):
     dim_C2_2 = c_CNN_out
 
     use_apex = True
-    apex_level = "O1"
+    apex_level = "O0"
 
     adjust_lr = False
-    T = 20
-    batch = 2
-    data_use = 5
+    T = 12
+    batch = 1
+    data_use = 1488
     lr = 5e-3
     epochs = 200
     weight_decay = 1e-6
@@ -50,15 +57,18 @@ class TrackerConfig(object):
     padding = 1.0
     output_sigma_factor = 0.1
     output_sigma = img_input_size[0] / (1 + padding) * output_sigma_factor
+
+
+    num_scale = 5
+    # num_scale = 5
+    scale_step = 1.0275
+    # scale_step = 1.3
+    scale_factor = scale_step ** (np.arange(num_scale) - num_scale / 2)
+    # scale_factor = scale_step ** (np.arange(num_scale) - int(num_scale / 2))
+    scale_penalty = 0.9925
+    scale_penalties = scale_penalty ** (np.abs((np.arange(num_scale) - num_scale / 2)))
     net_average_image = np.expand_dims(np.expand_dims(np.array([127, 127, 117]), axis=1), axis=1).astype(np.float32)
     y = gaussian_shaped_labels(output_sigma, [w_CNN_out, h_CNN_out])
-    yt = torch.Tensor(y)
-    label_sum = yt.sum().cuda()
-    # print(label_sum)
-    yf = torch.rfft(yt.view(1, 1, w_CNN_out, h_CNN_out).cuda(), signal_ndim=2)
-    label_sum = label_sum.expand_as(yt.view(1, 1, w_CNN_out, h_CNN_out))
-    # print(label_sum)
-    cos_window = torch.Tensor(np.outer(np.hanning(w_CNN_out), np.hanning(w_CNN_out))).cuda()
 
 if __name__ == "__main__":
     print("{:.3e}".format(3.65))

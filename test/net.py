@@ -32,13 +32,18 @@ class DCFNTM(nn.Module):
         self.config = config
         self.feature = Feature(config)
         self.lambda0 = config.lambda0
-        self.yf = config.yf.clone()
-        self.label_sum = config.label_sum.clone()
+        # self.yf = config.yf.clone()
+        # self.label_sum = config.label_sum.clone()
         if usecheckpoint is None:
             self.usecheckpoint = True
         else:
             self.usecheckpoint = usecheckpoint
+
+        if config.C_norm:
+            self.init_x_norm = torch.nn.LayerNorm([config.dim_C2_1, config.dim_C2_2],
+                                                  elementwise_affine=config.norm_learnable)
         self.ntm = NTM(config, self.usecheckpoint)
+
     def checkpoint_seg1_x(self, x_i):
         assert x_i.is_contiguous(), "view not contiguous"
         x = x_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0], self.config.img_input_size[1])
@@ -67,7 +72,7 @@ class DCFNTM(nn.Module):
             h0 = h0.cuda()
         h0 = h0.requires_grad_(True)
         c0 = xf[:, 0, :, :]
-
+        c0 = self.init_x_norm(c0)
         h, c = self.ntm.forward_batch(h0, c0, xf)
 
         c = c.permute(0, 1, 3, 2).contiguous()
@@ -81,13 +86,12 @@ class DCFNTM(nn.Module):
 
         kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
         kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
-        alphaf = self.yf.to(device=zf_btcwh.device) / (kzzf + self.lambda0)  # very Ugly
+        alphaf = self.yf.clone().to(device=zf_btcwh.device) / (kzzf + self.lambda0)  # very Ugly
         response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
 
-        norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
-        response = (response/norm_scal.expand_as(response))*\
-                   self.label_sum.to(device=zf_btcwh.device).expand_as(response)
-
+        # norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
+        # response = (response/norm_scal.expand_as(response))*\
+        #            self.label_sum.to(device=zf_btcwh.device).expand_as(response)
 
         # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
         assert response.is_contiguous(), "view not contiguous"
@@ -136,11 +140,11 @@ class DCFNTM(nn.Module):
 
         kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
         kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
-        alphaf = self.yf.to(device=z.device) / (kzzf + self.lambda0)  # very Ugly
+        alphaf = self.yf.clone().to(device=z.device) / (kzzf + self.lambda0)  # very Ugly
         response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
-        norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
-        response = (response / norm_scal.expand_as(response)) * \
-                   self.label_sum.to(device=zf_btcwh.device).expand_as(response)
+        # norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
+        # response = (response / norm_scal.expand_as(response)) * \
+        #            self.label_sum.to(device=zf_btcwh.device).expand_as(response)
         # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
         return response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out)
 
@@ -168,7 +172,7 @@ class DCFNTM(nn.Module):
         if next(self.parameters()).is_cuda:
             h_p = h_p.cuda()
         if c_p is None:
-            c_p = xf
+            c_p = self.init_x_norm(xf)
 
         h_o, c_o = self.ntm.forward(h_p, c_p, xf)
 
@@ -180,22 +184,29 @@ class DCFNTM(nn.Module):
         cfft = torch.rfft(c_btcwh, signal_ndim=2)
         zfft = torch.rfft(zf_btcwh, signal_ndim=2)
 
-        kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
-        kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
-        alphaf = self.yf.to(device=z_i.device) / (kzzf + self.lambda0)  # very Ugly
-        response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
-        norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
-        response = (response / norm_scal.expand_as(response)) * \
-                   self.label_sum.to(device=zf_btcwh.device).expand_as(response)
-        #print(response.shape)
+        if not self.config.direct_correlation:
+            kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
+            kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
+            alphaf = self.yf.to(device=z_i.device) / (kzzf + self.lambda0)  # very Ugly
+            response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
+        else:
+            response_fft = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
+            response = torch.irfft(response_fft, signal_ndim=2)
+        # norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
+        # response = (response / norm_scal.expand_as(response)) * \
+        #           self.label_sum.to(device=zf_btcwh.device).expand_as(response)
+        # print(response.shape)
         # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
         return response.view(1, self.config.w_CNN_out, self.config.h_CNN_out), h_o, c_o
+
 
 from torch.utils.data import DataLoader
 from train.dataprepare.data import VID
 import json
 import time
+
 criterion = nn.MSELoss(size_average=False).cuda()
+
 
 def cxy_wh_2_rect1(pos, sz):
     return np.array([pos[0] - sz[0] / 2 + 1, pos[1] - sz[1] / 2 + 1, sz[0], sz[1]])  # 1-index
@@ -237,7 +248,7 @@ if __name__ == "__main__":
 
     # exit()
     net = DCFNTM(config).cuda()
-    ss = torch.load("/home/studentw/disk3/tracker/test_DCFNMT/work/c60_core8_best.tar")
+    ss = torch.load("/home/studentw/disk3/tracker/test_DCFNMT/work/multimodule_normC_.tar")
     # for param_tensor in ss["state_dict"]:
     #     print(param_tensor)
     net.load_state_dict(ss["state_dict"])
@@ -258,8 +269,8 @@ if __name__ == "__main__":
         im = cv2.imread(image_files[0])  # HxWxC
 
         # confine results
-        #min_sz = np.maximum(config.min_scale_factor * target_sz, 4)
-        #max_sz = np.minimum(im.shape[:2], config.max_scale_factor * target_sz)
+        # min_sz = np.maximum(config.min_scale_factor * target_sz, 4)
+        # max_sz = np.minimum(im.shape[:2], config.max_scale_factor * target_sz)
 
         # crop template
         window_sz = target_sz * (1 + config.padding)
@@ -269,16 +280,15 @@ if __name__ == "__main__":
         target = patch - config.net_average_image
         with torch.no_grad():
             # print(target.shape)
-            r, h, c = net(torch.tensor(target, dtype=torch.float32).cuda(),
-                          torch.tensor(target, dtype=torch.float32).cuda())
+            r, h, c = net.forward(torch.tensor(target, dtype=torch.float32).cuda(),
+                                  torch.tensor(target, dtype=torch.float32).cuda())
 
         res = [cxy_wh_2_rect1(target_pos, target_sz)]  # save in .txt
-        #patch_crop = np.zeros((config.num_scale, patch.shape[0], patch.shape[1], patch.shape[2]), np.float32)
+        # patch_crop = np.zeros((config.num_scale, patch.shape[0], patch.shape[1], patch.shape[2]), np.float32)
         for f in range(1, n_images):  # track
             temp_sz = target_sz * (1 + config.padding)
             temp_box = cxy_wh_2_bbox(temp_pos, temp_sz)
-            temp_crop = crop_chw(im, temp_box, config.img_input_size[0])- config.net_average_image
-
+            temp_crop = crop_chw(im, temp_box, config.img_input_size[0]) - config.net_average_image
 
             im = cv2.imread(image_files[f])
             window_sz = target_sz * (1 + config.padding)
@@ -287,12 +297,18 @@ if __name__ == "__main__":
             print(c.cpu().numpy().var())
             print(c.cpu().numpy().mean())
             with torch.no_grad():
-                response, h, c = net(torch.Tensor(temp_crop).cuda(),
-                                     torch.Tensor(search_crop).cuda(),
-                                     h, c)
+                response, h, c = net.forward(torch.tensor(temp_crop, dtype=torch.float32).cuda(),
+                                             torch.tensor(search_crop, dtype=torch.float32).cuda(),
+                                             h, c)
+            # cview = c.view((1, 99, 99, 32))
+            # cview = cview[0, :, :, 0:3].cpu().detach().numpy()
+            # cview = cview
+            # cview = (cview - np.ones_like(cview) * np.min(cview)) / (np.max(cview) - np.min(cview))
             r = response.cpu().detach().numpy()
-            #cv2.imshow("1", r[0])
-            #cv2.waitKey(0)
+            cv2.imshow("1", r[0])
+            cv2.waitKey(0)
+            # cv2.imshow("1", cview)
+            # cv2.waitKey(0)
             # for i in range(config.num_scale):  # crop multi-scale search region
             #     window_sz = target_sz * (config.scale_factor[i] * (1 + config.padding))
             #     bbox = cxy_wh_2_bbox(target_pos, window_sz)
@@ -301,33 +317,32 @@ if __name__ == "__main__":
             #     search = patch_crop[i, :] - config.net_average_image
             #     response, h, c = net(torch.Tensor(search).cuda())
 
-
             peak, idx = torch.max(response.view(1, -1), 1)
             peak = peak.data.cpu().numpy()
-            #best_scale = np.argmax(peak)
+            # best_scale = np.argmax(peak)
             r_max, c_max = np.unravel_index(idx.cpu(), config.net_input_size)
             if r_max > config.net_input_size[0] / 2:
                 r_max = r_max - config.net_input_size[0]
-            #     if r_max[0] < -10:
-            #         r_max[0] = -10
-            # else:
-            #     if r_max[0] > 10:
-            #         r_max[0] = 10
+                if r_max[0] < -10:
+                    r_max[0] = -10
+            else:
+                if r_max[0] > 10:
+                    r_max[0] = 10
 
             if c_max > config.net_input_size[1] / 2:
                 c_max = c_max - config.net_input_size[1]
-            #     if c_max[0] < -10:
-            #         c_max[0] = -10
-            # else:
-            #     if c_max[0] > 10:
-            #         c_max[0] = 10
-            #
+                if c_max[0] < -10:
+                    c_max[0] = -10
+            else:
+                if c_max[0] > 10:
+                    c_max[0] = 10
+
             window_sz = target_sz * (1 + config.padding)
             # print(np.array([c_max[0], r_max[0]]))
             # print(target_pos)
             # print(np.array([c_max, r_max]) * window_sz) #/ config.img_input_size[0])
             target_pos = target_pos + np.array([c_max[0], r_max[0]]) * window_sz / config.img_input_size[0]
-            #print(target_pos)
+            # print(target_pos)
             target_sz = window_sz / (1 + config.padding)
 
             # model update
@@ -341,7 +356,7 @@ if __name__ == "__main__":
                               (0, 255, 0), 3)
                 cv2.putText(im_show, str(f), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
                 cv2.imshow(video, im_show)
-                cv2.waitKey(1)
+                cv2.waitKey(0)
 
         toc = time.time() - tic
         fps = n_images / toc
@@ -350,7 +365,7 @@ if __name__ == "__main__":
 
         # save result
         test_path = join('result', dataset, 'DCFNet_test')
-        #if not isdir(test_path): makedirs(test_path)
+        # if not isdir(test_path): makedirs(test_path)
         result_path = join(test_path, video + '.txt')
         with open(result_path, 'w') as f:
             for x in res:
@@ -358,24 +373,22 @@ if __name__ == "__main__":
 
     print('***Total Mean Speed: {:3.1f} (FPS)***'.format(np.mean(speed)))
 
-    #eval_auc(dataset, 'DCFNet_test', 0, 1)
-
-
-
+    # eval_auc(dataset, 'DCFNet_test', 0, 1)
 
     # config = TrackerConfig()
     # net = DCFNTM(config)
-    # ss = torch.load("/home/studentw/disk3/tracker/test_DCFNMT/work/c60_core8_best.tar")
+    # ss = torch.load("/home/studentw/disk3/tracker/test_DCFNMT/work/multimodule_normC_.tar")
     # # for param_tensor in ss["state_dict"]:
     # #     print(param_tensor)
     # net.load_state_dict(ss["state_dict"])
     # net.train()
-    # net = net.cuda()
-    # data = VID([6, 1488],  config=config, train=True)
+    # #net = net.cuda()
+    # data = VID([1488],  config=config, train=True)
     #
     # train_loader = DataLoader(
     # data, batch_size=config.batch * 1, shuffle=True,
     # num_workers=1, pin_memory=True, drop_last=True)
+    # (x, z, r) = data[0]
     #
     #
     # for i, (template, search, response) in enumerate(train_loader):
@@ -391,9 +404,9 @@ if __name__ == "__main__":
     #     # print(response.shape)
     #     loss = criterion(output, response) / template.size(0)  # criterion = nn.MSEloss
     #
-    #     x = template.cpu().detach().numpy()[0]
-    #     z = search.cpu().detach().numpy()[0]
-    #     r = response.cpu().detach().numpy()[0]
+    # x = template.cpu().detach().numpy()[0]
+    # z = search.cpu().detach().numpy()[0]
+    # r = response.cpu().detach().numpy()[0]
     #     for i in range(0, 20):
     #
     #         cv2.imshow("1", (x[i] + data.mean).transpose((1, 2, 0)).astype(np.uint8))
@@ -408,26 +421,22 @@ if __name__ == "__main__":
     #         cv2.imshow("1", (r[i]))
     #         cv2.waitKey(0)
 
-    # for i in range(0, 20):
-    #     if i == 0:
-    #         res, h, c = net.forward(torch.tensor(x[i], dtype=torch.float),
-    #                                 torch.tensor(z[i], dtype=torch.float))
-    #     else:
-    #         res, h, c = net.forward(torch.tensor(x[i], dtype=torch.float),
-    #                                 torch.tensor(z[i], dtype=torch.float), h, c)
+    # for i in range(0, 11):
+    #     with torch.no_grad():
+    #         if i == 0:
+    #             res, h, c = net.forward(torch.tensor(x[i], dtype=torch.float),
+    #                                     torch.tensor(z[i], dtype=torch.float))
+    #         else:
+    #             res, h, c = net.forward(torch.tensor(x[i], dtype=torch.float),
+    #                                     torch.tensor(z[i], dtype=torch.float), h, c)
     #
     #     cv2.imshow("1", (x[i] + data.mean).transpose((1, 2, 0)).astype(np.uint8))
     #     cv2.waitKey(0)
     #     cv2.imshow("1", (z[i] + data.mean).transpose((1, 2, 0)).astype(np.uint8))
     #     cv2.waitKey(0)
     #     res = res.detach().numpy()[0]
-    #     resc = (res - np.ones_like(res) * np.min(res)) / (np.max(res) - np.min(res))
-    #     cv2.imshow("1", resc)
+    #     #resc = (res - np.ones_like(res) * np.min(res)) / (np.max(res) - np.min(res))
+    #     cv2.imshow("1", res)
     #     cv2.waitKey(0)
     #     cv2.imshow("1", (r[i]))
     #     cv2.waitKey(0)
-
-
-
-
-

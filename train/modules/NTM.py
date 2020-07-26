@@ -32,7 +32,7 @@ class NTM(nn.Module):
         h, c = self.ntm_cell(h_o_prev, c_prev, x_input)
         return h, c
 
-    def forward_batch(self, h0, c0, c_x):
+    def forward_batch(self, h0, c0, c_x,):
         """
         h0: N * dim_h_o
         c0: N * C2_1 * C2_2
@@ -49,7 +49,10 @@ class NTM(nn.Module):
             out_C.append(c)
         # print(len(out_C))
         # print(out_C[1].shape)
-        return [torch.stack(out_h[1:], dim=1), torch.stack(out_C[1:], dim=1)]
+        if not self.config.long_term:
+            return [torch.stack(out_h[1:], dim=1), torch.stack(out_C[1:], dim=1)]
+        else:
+            return [out_h[-1].unsqueeze(1), out_C[-1].unsqueeze(1)]
 
 
 class NTMCell_single(nn.Module):
@@ -84,27 +87,6 @@ class NTMCell_single(nn.Module):
         self.i = 0  # object id
         self.t = 0  # time
         self.n = 0  # sample id
-
-    def checkpoint_seg1_k(self, h_o_prev):
-        k = self.linear_k(h_o_prev)  # N * C2_2
-        return k
-
-    def checkpoint_seg1_b(self, h_o_prev):
-        beta_pre = self.linear_b(h_o_prev)
-        return beta_pre
-
-    def checkpoint_seg1_e(self, h_o):
-        e = self.linear_e(h_o).sigmoid().unsqueeze(1)  # N * 1 * C2_2
-        return e
-
-    def checkpoint_seg1_v(self, h_o):
-        # Write vector
-        v = self.linear_v(h_o).unsqueeze(1)  # N * 1 * C2_2
-        return v
-
-    def checkpoint_seg1_gru(self, r, h_o_prev):
-        h_o = self.rnn_cell(r, h_o_prev)
-        return h_o
 
     def forward(self, h_o_prev, c_prev, c_xf):
         return self.forward_no_checkpoint_full_version(h_o_prev, c_prev, c_xf)

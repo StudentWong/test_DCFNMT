@@ -57,36 +57,53 @@ class DCFNTM(nn.Module):
 
     def checkpoint_seg1_z(self, z_i):
         assert z_i.is_contiguous(), "view not contiguous"
-        z = z_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0], self.config.img_input_size[1])
+        if self.config.long_term:
+            z = z_i.view(self.config.batch, 3, self.config.img_input_size[0],
+                         self.config.img_input_size[1])
+        else:
+            z = z_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0], self.config.img_input_size[1])
         zf_btcwh = self.feature(z)
         return zf_btcwh
 
-    def checkpoint_seg_no_para(self, zf_btcwh, xf):
+    def checkpoint_seg_no_para(self, zf_btcwh, xf, h_0, c_0):
         if self.config.apex_level == "O2" or self.config.apex_level == "O3":
-            h0 = torch.ones((self.config.batch, self.config.dim_h_o), dtype=torch.float).half()
+            if h_0 is None or self.config.long_term:
+                h_0 = torch.ones((self.config.batch, self.config.dim_h_o), dtype=torch.float).half()
         else:
-            h0 = torch.ones((self.config.batch, self.config.dim_h_o), dtype=torch.float)
+            if h_0 is None or self.config.long_term:
+                h_0 = torch.ones((self.config.batch, self.config.dim_h_o), dtype=torch.float)
 
         if next(self.parameters()).is_cuda:
-            h0 = h0.cuda()
-        h0 = h0.requires_grad_(True)
-        c0 = xf[:, 0, :, :]
-        c0 = self.init_x_norm(c0)
-        h, c = self.ntm.forward_batch(h0, c0, xf)
+            h_0 = h_0.cuda()
+        h_0 = h_0.requires_grad_(True)
+
+        if c_0 is None or self.config.long_term:
+            c_0 = xf[:, 0, :, :]
+            c_0 = self.init_x_norm(c_0)
+        h, c = self.ntm.forward_batch(h_0, c_0, xf)
 
         c = c.permute(0, 1, 3, 2).contiguous()
         # print(c.is_contiguous())
         assert c.is_contiguous(), "view not contiguous"
-        c_btcwh = c.view((self.config.batch * self.config.T, self.config.dim_C2_2,
-                          self.config.w_CNN_out, self.config.h_CNN_out))
+
+        if self.config.long_term:
+            c_btcwh = c.view((self.config.batch, self.config.dim_C2_2,
+                              self.config.w_CNN_out, self.config.h_CNN_out))
+        else:
+            c_btcwh = c.view((self.config.batch * self.config.T, self.config.dim_C2_2,
+                              self.config.w_CNN_out, self.config.h_CNN_out))
 
         cfft = torch.rfft(c_btcwh, signal_ndim=2)
         zfft = torch.rfft(zf_btcwh, signal_ndim=2)
 
-        kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
-        kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
-        alphaf = self.yf.clone().to(device=zf_btcwh.device) / (kzzf + self.lambda0)  # very Ugly
-        response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
+        if not self.config.direct_correlation:
+            kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
+            kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
+            alphaf = self.yf.clone().to(device=zf_btcwh.device) / (kzzf + self.lambda0)  # very Ugly
+            response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
+        else:
+            response_fft = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
+            response = torch.irfft(response_fft, signal_ndim=2)
         # norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
         # response = (response / norm_scal.expand_as(response)) * \
         #            self.label_sum.clone().to(device=zf_btcwh.device).expand_as(response)
@@ -94,15 +111,19 @@ class DCFNTM(nn.Module):
         # print(response.shape)
         # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
         assert response.is_contiguous(), "view not contiguous"
-        return response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out)
 
-    def forward_checkpoint(self, x_i, z_i):
+        if self.config.long_term:
+            return response.view(self.config.batch, 1, self.config.w_CNN_out, self.config.h_CNN_out), c
+        else:
+            return response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out)
+
+    def forward_checkpoint(self, x_i, z_i, h_0, c_0):
         xf_btcwh = checkpoint(self.checkpoint_seg1_x, x_i)
         zf_btcwh = checkpoint(self.checkpoint_seg1_z, z_i)
 
         xf = checkpoint(self.checkpoint_seg1_x_premute, xf_btcwh)
 
-        return self.checkpoint_seg_no_para(zf_btcwh, xf)
+        return self.checkpoint_seg_no_para(zf_btcwh, xf, h_0, c_0)
 
     def forward_no_checkpoint(self, x_i, z_i):
         xf_btcwh = self.checkpoint_seg1_x(x_i)
@@ -114,7 +135,12 @@ class DCFNTM(nn.Module):
 
     def forward_no_checkpoint_full_version(self, x_i, z_i):
         x = x_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0], self.config.img_input_size[1])
-        z = z_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0], self.config.img_input_size[1])
+        if self.config.long_term:
+            z = z_i.view(self.config.batch * 1, 3, self.config.img_input_size[0],
+                         self.config.img_input_size[1])
+
+        else:
+            z = z_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0], self.config.img_input_size[1])
 
         xf_btcwh = self.feature(x)
         xf = xf_btcwh.permute(0, 2, 3, 1).contiguous()
@@ -131,8 +157,9 @@ class DCFNTM(nn.Module):
 
         c = c.permute(0, 1, 3, 2).contiguous()
         # print(c.is_contiguous())
+
         c_btcwh = c.view((self.config.batch * self.config.T, self.config.dim_C2_2,
-                          self.config.w_CNN_out, self.config.h_CNN_out))
+                              self.config.w_CNN_out, self.config.h_CNN_out))
 
         cfft = torch.rfft(c_btcwh, signal_ndim=2)
         zfft = torch.rfft(zf_btcwh, signal_ndim=2)
@@ -149,17 +176,54 @@ class DCFNTM(nn.Module):
         # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
         return response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out)
 
-    def forward(self, x_i, z_i):
+    def forward(self, x_i, z_i, h_0=None, c_0=None):
         """
         :param x_i: batch * T * 3 * img_input_size1 * img_input_size2
         :param z_i: batch * T * 3 * img_input_size1 * img_input_size2
         :return: response batch * T * 1 * cnn_outsize1 * cnn_outsize2
         """
         if self.usecheckpoint:
-            return self.forward_checkpoint(x_i, z_i)
+            return self.forward_checkpoint(x_i, z_i, h_0, c_0)
         else:
-            return self.forward_no_checkpoint(x_i, z_i)
+            return self.forward_no_checkpoint(x_i, z_i, h_0, c_0)
 
+    def forward_single(self, x_i, z_i, h_p=None, c_p=None):
+
+        xf_btcwh = self.feature(x_i.unsqueeze(0))
+        xf = xf_btcwh.permute(0, 2, 3, 1).contiguous()
+        xf = xf.view((1, self.config.dim_C2_1, self.config.dim_C2_2))
+
+        zf_btcwh = self.feature(z_i.unsqueeze(0))
+
+
+
+        if h_p is None:
+            h_p = torch.ones((1, self.config.dim_h_o), dtype=torch.float)
+        if next(self.parameters()).is_cuda:
+            h_p = h_p.cuda()
+        if c_p is None:
+            c_p = self.init_x_norm(xf)
+
+        h_o, c_o = self.ntm.forward(h_p, c_p, xf)
+
+        c = c_o.permute(0, 2, 1).contiguous()
+        # print(c.is_contiguous())
+        c_btcwh = c.view((1, self.config.dim_C2_2,
+                          self.config.w_CNN_out, self.config.h_CNN_out))
+
+        cfft = torch.rfft(c_btcwh, signal_ndim=2)
+        zfft = torch.rfft(zf_btcwh, signal_ndim=2)
+
+        kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
+        kxzf = torch.sum(complex_mulconj(zfft, cfft), dim=1, keepdim=True)
+        alphaf = self.yf.to(device=z_i.device) / (kzzf + self.lambda0)  # very Ugly
+        response = torch.irfft(complex_mul(kxzf, alphaf), signal_ndim=2)
+        # norm_scal = torch.sum(response, dim=(2, 3), keepdim=True)
+        # response = (response / norm_scal.expand_as(response)) * \
+        #           self.label_sum.to(device=zf_btcwh.device).expand_as(response)
+        # print(response.shape)
+        # print(response.view(self.config.batch, self.config.T, self.config.w_CNN_out, self.config.h_CNN_out).is_contiguous())
+        return response.view(1, self.config.w_CNN_out, self.config.h_CNN_out), h_o, c_o
 
 import copy
 # from graphviz import Digraph
@@ -185,7 +249,7 @@ if __name__ == "__main__":
     x = torch.rand((config.batch, config.T, 3, config.img_input_size[0], config.img_input_size[1]),
                    dtype=torch.float) * 1
     x = x.cuda()
-    z = torch.rand((config.batch, config.T, 3, config.img_input_size[0], config.img_input_size[1]),
+    z = torch.rand((config.batch, 1, 3, config.img_input_size[0], config.img_input_size[1]),
                    dtype=torch.float) * 100
     z = z.cuda()
 
@@ -197,7 +261,9 @@ if __name__ == "__main__":
 
     net1, optim1 = amp.initialize(net1, optim1, opt_level="O0")
 
-    r1 = net1(x1, z1)
+    r1, c = net1(x1, z1)
+    print(r1.shape)
+    print(c.shape)
     rm1 = r1.mean(dim=(1, 2))
     loss1 = losser1(rm1, torch.ones_like(rm1, dtype=torch.float))
 
@@ -212,26 +278,26 @@ if __name__ == "__main__":
         print('-->name:', name, '-->grad_requirs:', parms.requires_grad,
               # ' -->grad_value:', parms.grad,
               ' -->value:', parms.data)
-    # gpu_memory_log()
+    gpu_memory_log()
 
     # no_checkpoint
-    x2 = x.clone().requires_grad_(True)
-    z2 = z.clone().requires_grad_(True)
-    losser2 = nn.MSELoss()
-    optim2 = torch.optim.Adam(net2.parameters(), 1e-3)
-    r2 = net2.forward_no_checkpoint_full_version(x2, z2)
-    rm2 = r2.mean(dim=(1, 2))
+    #x2 = x.clone().requires_grad_(True)
+    #z2 = z.clone().requires_grad_(True)
+    #losser2 = nn.MSELoss()
+    #optim2 = torch.optim.Adam(net2.parameters(), 1e-3)
+    #r2 = net2.forward_no_checkpoint_full_version(x2, z2)
+    #rm2 = r2.mean(dim=(1, 2))
     ##writer = SummaryWriter('runs/fashion_mnist_experiment_1')
     ##writer.add_graph(net2, [x2, z2])
     ##writer.close()
-    loss2 = losser2(rm2, torch.ones_like(rm2, dtype=torch.float))
-    loss2.backward()
-    optim2.step()
-    optim2.zero_grad()
-    for name, parms in net2.named_parameters():
-        print('-->name:', name, '-->grad_requirs:', parms.requires_grad,
-              # ' -->grad_value:', parms.grad,
-              ' -->value:', parms.data)
+    #loss2 = losser2(rm2, torch.ones_like(rm2, dtype=torch.float))
+    #loss2.backward()
+    #optim2.step()
+    #optim2.zero_grad()
+    #for name, parms in net2.named_parameters():
+    #    print('-->name:', name, '-->grad_requirs:', parms.requires_grad,
+    #          # ' -->grad_value:', parms.grad,
+    #          ' -->value:', parms.data)
     # gpu_memory_log()
 
     # with torch.no_grad():
