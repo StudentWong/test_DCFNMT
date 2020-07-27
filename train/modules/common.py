@@ -1,5 +1,7 @@
 from torch import nn
+import numpy as np
 import torch
+import torch.nn.functional as F
 
 def norm_grad(input, max_norm):
     if input.requires_grad:
@@ -12,6 +14,24 @@ def norm_grad(input, max_norm):
             # clip_coef = float(max_norm) / (grad.norm(2).data[0] + 1e-6)
             # return grad.mul(clip_coef) if clip_coef < 1 else grad
         input.register_hook(norm_hook)
+
+
+class GaussianBlurConv(nn.Module):
+    def __init__(self, channels=3):
+        super(GaussianBlurConv, self).__init__()
+        self.channels = channels
+        kernel = [[0.00078633, 0.00655965, 0.01330373, 0.00655965, 0.00078633],
+                  [0.00655965, 0.05472157, 0.11098164, 0.05472157, 0.00655965],
+                  [0.01330373, 0.11098164, 0.22508352, 0.11098164, 0.01330373],
+                  [0.00655965, 0.05472157, 0.11098164, 0.05472157, 0.00655965],
+                  [0.00078633, 0.00655965, 0.01330373, 0.00655965, 0.00078633]]
+        kernel = torch.tensor(kernel, dtype=torch.float).unsqueeze(0).unsqueeze(0)
+        kernel = kernel.expand((channels, 1, 5, 5))
+        self.weight = torch.tensor(data=kernel, requires_grad=False).cuda()
+
+    def forward(self, x):
+        y = F.conv2d(x, self.weight, padding=2, groups=self.channels)
+        return y
 
 
 class IdentityFun(torch.autograd.Function):

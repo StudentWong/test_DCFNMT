@@ -5,6 +5,7 @@ import cv2
 from torch.utils.checkpoint import checkpoint
 import torch
 from train.modules.NTM import NTM
+from train.modules.common import GaussianBlurConv
 from train.modules.feature import Feature
 from train.config import TrackerConfig
 from apex import amp
@@ -32,7 +33,7 @@ class DCFNTM(nn.Module):
         self.feature = Feature(config)
         self.lambda0 = config.lambda0
         self.yf = config.yf.clone().requires_grad_(True)
-        self.label_sum = config.label_sum.clone().requires_grad_(True)
+        #self.label_sum = config.label_sum.clone().requires_grad_(True)
         if usecheckpoint is None:
             self.usecheckpoint = True
         else:
@@ -41,6 +42,7 @@ class DCFNTM(nn.Module):
         if config.C_norm:
             self.init_x_norm = torch.nn.LayerNorm([config.dim_C2_1, config.dim_C2_2],
                                                   elementwise_affine=config.norm_learnable)
+
         self.ntm = NTM(config, self.usecheckpoint)
 
     def checkpoint_seg1_x(self, x_i):
@@ -92,6 +94,7 @@ class DCFNTM(nn.Module):
         else:
             c_btcwh = c.view((self.config.batch * self.config.T, self.config.dim_C2_2,
                               self.config.w_CNN_out, self.config.h_CNN_out))
+
 
         cfft = torch.rfft(c_btcwh, signal_ndim=2)
         zfft = torch.rfft(zf_btcwh, signal_ndim=2)
@@ -210,6 +213,7 @@ class DCFNTM(nn.Module):
         # print(c.is_contiguous())
         c_btcwh = c.view((1, self.config.dim_C2_2,
                           self.config.w_CNN_out, self.config.h_CNN_out))
+
 
         cfft = torch.rfft(c_btcwh, signal_ndim=2)
         zfft = torch.rfft(zf_btcwh, signal_ndim=2)

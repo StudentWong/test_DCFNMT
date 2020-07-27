@@ -17,19 +17,20 @@ def load_json(filename):
 
 class TrackerConfig(object):
 
-    #data_root = '/home/lilium/caijihuzhuo/OTB_wh103_p1.0'
-    data_root = '/home/studentw/disk3/tracker/test_DCFNMT/OTB_wh103_p1.0'
+    data_root = '/home/lilium/caijihuzhuo/OTB_wh103_p1.0'
+    # data_root = '/home/studentw/disk3/tracker/test_DCFNMT/OTB_wh103_p1.0'
 
-    module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
-    #module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
+    # module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
+    module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
 
-    save_path = '/home/studentw/disk3/tracker/test_DCFNMT/work1'
+    # save_path = '/home/studentw/disk3/tracker/test_DCFNMT/work3'
+    save_path = '/home/lilium/caijihuzhuo/test_DCFNMT/work3'
     module_config_base = load_json(module_config_path)
     module_config = module_config_base["duke"]["default"]
 
     mult_model = True
     C_blur = True
-    C_Erase = True
+    C_Erase = False
     C_blur_inherit = True
     direct_correlation = False
     C_norm = True
@@ -53,11 +54,11 @@ class TrackerConfig(object):
     apex_level = "O0"
 
     adjust_lr = False
-    T = 12
-    batch = 1
+    T = 15
+    batch = 12
     data_use = 98
     lr = 5e-3
-    epochs = 200
+    epochs = 250
     weight_decay = 1e-6
 
     lambda0 = 1e-4

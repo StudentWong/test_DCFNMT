@@ -1,7 +1,7 @@
 from torch import nn
 import numpy as np
 import torch
-from train.modules.common import FCN, norm_grad, Identity
+from train.modules.common import FCN, norm_grad, Identity, GaussianBlurConv
 from torch.utils.checkpoint import checkpoint
 
 
@@ -21,6 +21,8 @@ class NTM(nn.Module):
         # self.softmax = nn.Softmax(dim=1)
         self.use_checkpoint = use_checkpoint
         self.ntm_cell = NTMCell_single(config, use_checkpoint)
+        if self.config.C_blur:
+            self.C_Blur = GaussianBlurConv(self.config.c_CNN_out)
         # self.att = torch.Tensor(config.batch, config.T, self.ntm_cell.ha, self.ntm_cell.wa).cuda()
         # self.mem = torch.Tensor(config.batch, config.T, self.ntm_cell.ha, self.ntm_cell.wa).cuda()
 
@@ -30,6 +32,7 @@ class NTM(nn.Module):
         c_prev: N * C2_1 * C2_2
         """
         h, c = self.ntm_cell(h_o_prev, c_prev, x_input)
+
         return h, c
 
     def forward_batch(self, h0, c0, c_x,):
@@ -45,6 +48,17 @@ class NTM(nn.Module):
         c_x_input = torch.unbind(c_x, dim=1)  # N * C2_1 * C2_2
         for t in range(0, self.config.T):
             h, c = self.ntm_cell(out_h[t], out_C[t], c_x_input[t])
+            if self.config.C_blur:
+                if self.config.C_blur_inherit or t == self.config.T-1:
+                    c = c.permute(0, 2, 1).contiguous()
+                    # print(c.is_contiguous())
+                    assert c.is_contiguous(), "view not contiguous"
+                    c = c.view(self.config.batch, self.config.dim_C2_2, self.config.w_CNN_out, self.config.h_CNN_out)
+                    c = self.C_Blur(c)
+                    assert c.is_contiguous(), "view not contiguous"
+                    c = c.view(self.config.batch, self.config.dim_C2_2, self.config.dim_C2_1)
+                    c = c.permute(0, 2, 1).contiguous()
+
             out_h.append(h)
             out_C.append(c)
         # print(len(out_C))
@@ -231,10 +245,13 @@ class NTMCell_single(nn.Module):
                 v = v.view(self.config.batch, self.config.key_feature_num, self.config.dim_C2_2)  # N * key * C2_2
 
                 # Update memory
-                w2 = w_kc.permute(0, 2, 1).contiguous()  # N * key_feature_num * C2_1
+                w2 = w_kc.permute(0, 2, 1).contiguous()  # N * C2_1 * key_feature_num
                 assert w2.is_contiguous(), "view not contiguous"
-
-                c_new = c_prev * (1 - w2.bmm(e)) + w2.bmm(v)  # N * C2_1 * C2_2
+                if self.config.C_Erase:
+                    we = w2.sum(dim=2, keepdim=True).expand_as(c_prev)
+                    c_new = we * c_prev * (1 - w2.bmm(e)) + w2.bmm(v)  # N * C2_1 * C2_2
+                else:
+                    c_new = c_prev * (1 - w2.bmm(e)) + w2.bmm(v)
                 norm_grad(c_new, 1)
         if self.config.C_norm:
             c_new = self.norm_c(c_new)

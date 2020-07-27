@@ -15,30 +15,30 @@ from train.modules.feature import Feature
 import torch.backends.cudnn as cudnn
 from apex import amp
 from train.net import DCFNTM
-from train.config import TrackerConfig
+#from train.config import TrackerConfig
 import time
 import argparse
 
 parser = argparse.ArgumentParser(description='Training DCFNet in Pytorch 0.4.0')
-parser.add_argument('--input_sz', dest='input_sz', default=125, type=int, help='crop input size')
-parser.add_argument('--padding', dest='padding', default=1.0, type=float, help='crop padding size')
-parser.add_argument('--range', dest='range', default=10, type=int, help='select range')
-parser.add_argument('--epochs', default=50, type=int, metavar='N',
-                    help='number of total epochs to run')
+#parser.add_argument('--input_sz', dest='input_sz', default=125, type=int, help='crop input size')
+#parser.add_argument('--padding', dest='padding', default=1.0, type=float, help='crop padding size')
+#parser.add_argument('--range', dest='range', default=10, type=int, help='select range')
+#parser.add_argument('--epochs', default=50, type=int, metavar='N',
+#                    help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
-                    help='manual epoch number (useful on restarts)')
+                   help='manual epoch number (useful on restarts)')
 parser.add_argument('--print-freq', '-p', default=20, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
                     help='number of data loading workers (default: 8)')
-parser.add_argument('-b', '--batch-size', default=32, type=int,
-                    metavar='N', help='mini-batch size (default: 32)')
-parser.add_argument('--lr', '--learning-rate', default=5e-3, type=float,
-                    metavar='LR', help='initial learning rate')
-parser.add_argument('--weight-decay', '--wd', default=1e-6, type=float,
-                    metavar='W', help='weight decay (default: 5e-5)')
+# parser.add_argument('-b', '--batch-size', default=32, type=int,
+#                     metavar='N', help='mini-batch size (default: 32)')
+# parser.add_argument('--lr', '--learning-rate', default=5e-3, type=float,
+#                     metavar='LR', help='initial learning rate')
+# parser.add_argument('--weight-decay', '--wd', default=1e-6, type=float,
+#                     metavar='W', help='weight decay (default: 5e-5)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--save', '-s', default='./work', type=str, help='directory for saving')
+parser.add_argument('--config', '-c', type=str, help='directory for config')
 
 args = parser.parse_args()
 train_loss = []
@@ -47,7 +47,20 @@ val_loss = []
 print(args)
 best_loss = 1e6
 
-config = TrackerConfig()
+import importlib
+
+s_path = args.config
+s_path_name, s_class_name = s_path.rsplit('.', 1)
+o_module = importlib.import_module(s_path_name)
+
+CClass = getattr(o_module, s_class_name) # 获取对应的class
+o_obj_0 = CClass() # 实例化
+config = getattr(o_module, s_class_name)() #  获取class’后直接实例化
+
+
+
+
+#config = TrackerConfig()
 
 model = DCFNTM(config, True)
 model.cuda()
@@ -83,13 +96,16 @@ if args.resume:
     else:
         print("=> no checkpoint found at '{}'".format(args.resume))
 
-save_path = join(args.save, 'T{:d}_b{:d}_C{:d}_data{:d}_lr{:.3e}'.format(config.T, config.batch,
-                                                                         config.dim_C2_2, config.data_use,
-                                                                         config.lr))
+# save_path = join(args.save, 'T{:d}_b{:d}_C{:d}_data{:d}_lr{:.3e}'.format(config.T, config.batch,
+#                                                                          config.dim_C2_2, config.data_use,
+#                                                                          config.lr))
+
+save_path = config.save_path
 if not isdir(save_path):
     makedirs(save_path)
 
 train_dataset, t_i, val_dataset, v_i = assign_train_test(config)
+print(v_i)
 
 train_loader = DataLoader(
     train_dataset, batch_size=config.batch * gpu_num, shuffle=True,
@@ -152,10 +168,13 @@ def train(train_loader, model, criterion, optimizer, epoch, train_loss_plot):
         response = response.cuda(non_blocking=True).requires_grad_(True)
 
         # compute output
-        output = model(template, search)
+        if config.long_term:
+            output, c = model(template, search)
+        else:
+            output = model(template, search)
         # print(output.shape)
         # print(response.shape)
-        loss = criterion(output, response) / (config.batch*config.T)  # criterion = nn.MSEloss
+        loss = criterion(output, response) / (response.shape[0] * response.shape[1])  # criterion = nn.MSEloss
 
         # measure accuracy and record loss
         losses.update(loss.item())
@@ -203,8 +222,12 @@ def validate(val_loader, model, criterion, val_loss_plot):
             response = response.cuda(non_blocking=True).requires_grad_(True)
 
             # compute output
-            output = model(template, search)
-            loss = criterion(output, response) / (config.batch * config.T * gpu_num)
+            if config.long_term:
+                output, c = model(template, search)
+            else:
+                output = model(template, search)
+
+            loss = criterion(output, response) / (response.shape[0] * response.shape[1] * gpu_num)
 
 
 #            x = template.cpu().detach().numpy()[0]
@@ -265,13 +288,13 @@ for epoch in range(args.start_epoch, config.epochs):
 
 plt.figure(0)
 plt.plot(np.array(train_loss))
-plt.savefig(join(args.save, 'train_T{:d}_b{:d}_C{:d}_data{:d}_lr{:.3e}.jpg'.format(config.T, config.batch,
+plt.savefig(join(save_path, 'train_T{:d}_b{:d}_C{:d}_data{:d}_lr{:.3e}.jpg'.format(config.T, config.batch,
                                                                                config.dim_C2_2, config.data_use,
                                                                                config.lr)))
 
 plt.figure(1)
 plt.plot(np.array(val_loss))
-plt.savefig(join(args.save, 'val_T{:d}_b{:d}_C{:d}_data{:d}_lr{:.3e}.jpg'.format(config.T, config.batch,
+plt.savefig(join(save_path, 'val_T{:d}_b{:d}_C{:d}_data{:d}_lr{:.3e}.jpg'.format(config.T, config.batch,
                                                                                config.dim_C2_2, config.data_use,
                                                                                config.lr)))
 # plt.show()

@@ -23,7 +23,8 @@ class TrackerConfig(object):
     module_config = module_config_base["duke"]["default"]
 
     mult_model = True
-    direct_correlation = True
+    direct_correlation = False
+    C_blur = True
     C_norm = True
     norm_learnable = True
     Z_attention = True
@@ -69,6 +70,9 @@ class TrackerConfig(object):
     scale_penalties = scale_penalty ** (np.abs((np.arange(num_scale) - num_scale / 2)))
     net_average_image = np.expand_dims(np.expand_dims(np.array([127, 127, 117]), axis=1), axis=1).astype(np.float32)
     y = gaussian_shaped_labels(output_sigma, [w_CNN_out, h_CNN_out])
+    yt = torch.Tensor(y)
+    #label_sum = yt.sum().cuda()
+    yf = torch.rfft(yt.view(1, 1, w_CNN_out, h_CNN_out).cuda(), signal_ndim=2)
 
 if __name__ == "__main__":
     print("{:.3e}".format(3.65))
