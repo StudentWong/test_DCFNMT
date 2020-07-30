@@ -232,12 +232,12 @@ def crop_chw(image, bbox, out_sz, padding=(0, 0, 0)):
     return np.transpose(crop, (2, 0, 1))
 
 
-from runs.config5 import TrackerConfig
+from runs.config1 import TrackerConfig
 import glob
 
 if __name__ == "__main__":
 
-    base = '/home/studentw/disk3/OTB100/Human3/'
+    base = '/home/studentw/disk3/OTB100/Skiing/'
     begin_num = 1
 
     use_gpu = True
@@ -248,7 +248,7 @@ if __name__ == "__main__":
 
     # exit()
     net = DCFNTM(config).cuda()
-    ss = torch.load("/home/studentw/work5/model_best.pth.tar")
+    ss = torch.load("/home/studentw/work1/model_best.pth.tar")
     # for param_tensor in ss["state_dict"]:
     #     print(param_tensor)
     net.load_state_dict(ss["state_dict"])
@@ -264,8 +264,9 @@ if __name__ == "__main__":
 
     tic = time.time()  # time start
 
-    target_pos = np.array([264 + 37 / 2, 311 + 69 / 2], dtype=np.float)
-    target_sz = np.array([37, 69], dtype=np.float)
+    initpos = [446, 181, 29, 26]
+    target_pos = np.array([initpos[0] + initpos[2] / 2, initpos[1] + initpos[3] / 2], dtype=np.float)
+    target_sz = np.array([initpos[2], initpos[3]], dtype=np.float)
     # print(image_files[0])
     image_files = join(base, 'img', '{:04d}.jpg'.format(begin_num))
     im = cv2.imread(image_files)  # HxWxC
@@ -305,7 +306,7 @@ if __name__ == "__main__":
         # exit()
 
         with torch.no_grad():
-            response, c = net.forward(x_i=temp.cuda(), z_i=search.cuda(), c_0=cp)
+            response, c, cmult = net.forward(x_i=temp.cuda(), z_i=search.cuda(), c_0=cp)
         # cview = c.permute(0, 2, 1).view((1, 32, 99, 99))
         # cview = cview[0, 0:3, :, :].permute(1, 2, 0).cpu().detach().numpy()
         # # cview = cview

@@ -28,13 +28,13 @@ class TrackerConfig(object):
     module_config = module_config_base["duke"]["default"]
 
     Spatial_NTM = True
-    mult_model = True
+    mult_model = False
     C_blur = True
     multi_C_output = True
     C_blur_inherit = True
     C_norm = True
     norm_learnable = True
-    long_term = False
+    long_term = True
     C_predict_loss = True
     C_depress_loss = True
 
@@ -42,7 +42,7 @@ class TrackerConfig(object):
         assert multi_C_output, "error"
 
     cos_esp = 1e-4
-    lambda_C_predict = 0.0001
+    lambda_C_predict = 0.0005
     lambda_C_depress = 0.00005
 
     C_Erase = False

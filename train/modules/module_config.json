@@ -40,16 +40,25 @@
                     "activate_fun": "relu",
                     "out_sizes": [101, 101],
                     "bn": -1,
-                    "dropout": -1
+                    "dropout": 1
                 },
                 {
                     "in_features": 16,
                     "out_features": 32,
                     "conv_kernels": 3,
-                    "activate_fun": "none",
+                    "activate_fun": "relu",
                     "out_sizes": [99, 99],
                     "bn": -1,
-                    "dropout": -1
+                    "dropout": 1
+                },
+                {
+                    "in_features": 32,
+                    "out_features": 32,
+                    "conv_kernels": 3,
+                    "activate_fun": "none",
+                    "out_sizes": [97, 97],
+                    "bn": -1,
+                    "dropout": 1
                 },
                 {
                     "norm": "LRN"

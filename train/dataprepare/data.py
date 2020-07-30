@@ -1,7 +1,7 @@
 import torch.utils.data as data
 import torch
 from os.path import join, isdir, isfile
-#from train.config import TrackerConfig
+from train.config import TrackerConfig
 import cv2
 import json
 import glob
@@ -82,6 +82,22 @@ class VID(data.Dataset):
         self.train = train
         self.output_sigma = config.output_sigma
 
+        self.data_para = []
+        for index in self.snp_index:
+            folder_name = "{:08d}".format(index)
+            folder_frame_files = glob.glob(join(self.root, folder_name, "tp_f*"))
+            folder_frame_num = len(folder_frame_files)
+
+            split_num = int(folder_frame_num/(self.T_len+1))
+            for begin_num in range(0, split_num*(self.T_len+1), (self.T_len+1)):
+                #begin_num = np.random.randint(0, folder_frame_num - self.T_len)
+                stride_max = int((folder_frame_num - begin_num + 1) / (self.T_len + 1))
+                if stride_max > 5:
+                    stride_max = 5
+                for stride in range(1, stride_max):
+                    self.data_para = self.data_para + [[index, begin_num, stride]]
+        self.len = len(self.data_para)
+
     def __getitem__(self, item):
         x = np.zeros(shape=(self.T_len, 3, self.img_size[0], self.img_size[1]), dtype=np.float32)
         if self.config.long_term:
@@ -104,17 +120,17 @@ class VID(data.Dataset):
             else:
                 res = np.zeros(shape=(self.T_len, self.res_size[0], self.res_size[1]), dtype=np.float32)
 
-        index = self.snp_index[int(item / self.n)]
-
+        # index = self.snp_index[int(item / self.n)]
+        index, begin_num, stride = self.data_para[item]
         folder_name = "{:08d}".format(index)
         folder_frame_files = glob.glob(join(self.root, folder_name, "tp_f*"))
         folder_frame_num = len(folder_frame_files)
-        if folder_frame_num - self.T_len<0:
-            print(folder_frame_files)
-            print(folder_name)
-        begin_num = np.random.randint(0, folder_frame_num - self.T_len)
+        # if folder_frame_num - self.T_len<0:
+        #     print(folder_frame_files)
+        #     print(folder_name)
+        # begin_num = np.random.randint(0, folder_frame_num - self.T_len)
 
-        stride = int((folder_frame_num-begin_num+1)/(self.T_len+1))
+        # stride = int((folder_frame_num-begin_num+1)/(self.T_len+1))
 
         temp_name1 = 'tp_f{:05d}.jpg'.format(begin_num)
         temp_path = join(self.root, folder_name, temp_name1)
@@ -203,19 +219,21 @@ class VID(data.Dataset):
             return x, z
 
     def __len__(self):
-        return len(self.snp_index) * self.n
+        return self.len
 
 #
 if __name__ == '__main__':
     config = TrackerConfig()
     train, train_i, test, test_i = assign_train_test(config, temp_distru=[0.1, 0.3, 0.5])
-    print(train_i)
+    # print(train_i)
+    # print(len(train))
     # for i in range(0, 1000):
-    #     xt, zt, r = train[i]
-    xt, zt, r = train[50]
+    #     xt, zt, r, z = train[i]
+    xt, zt, r, z = train[50]
     print(xt.shape)
     print(zt.shape)
     print(r.shape)
+    print(z.shape)
     #xte, zte, r = test[1]
     # print(r.shape)
     # print(test_i)
@@ -226,15 +244,15 @@ if __name__ == '__main__':
 
         cv2.imshow("1", (xt[i]+train.mean).transpose((1, 2, 0)).astype(np.uint8))
         cv2.waitKey(0)
-        # cv2.imshow("1", (zt[i] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
-        # cv2.waitKey(0)
-        # cv2.imshow("1", (r[i]))
-        # cv2.waitKey(0)
-
-    cv2.imshow("1", (zt[0] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
-    cv2.waitKey(0)
-    cv2.imshow("1", (r[0]))
-    cv2.waitKey(0)
+        cv2.imshow("1", (zt[i] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
+        cv2.waitKey(0)
+        cv2.imshow("1", (r[i]))
+        cv2.waitKey(0)
+    #
+    # cv2.imshow("1", (zt[0] + train.mean).transpose((1, 2, 0)).astype(np.uint8))
+    # cv2.waitKey(0)
+    # cv2.imshow("1", (r[0]))
+    # cv2.waitKey(0)
 
     #
     #     imxfft = torch.rfft(torch.tensor(xt[0], dtype=torch.float).unsqueeze(0), signal_ndim=2, onesided=True)

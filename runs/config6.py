@@ -44,7 +44,7 @@ class TrackerConfig(object):
         assert multi_C_output, "error"
 
     cos_esp = 1e-4
-    lambda_C_predict = 0.0001
+    lambda_C_predict = 0.0003
     lambda_C_depress = 0.00005
 
     C_Erase = False
@@ -80,7 +80,7 @@ class TrackerConfig(object):
 
     adjust_lr = False
     T = 12
-    batch = 2
+    batch = 8
     data_use = 98
     lr = 5e-3
     epochs = 200

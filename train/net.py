@@ -28,11 +28,13 @@ def complex_mulconj(x, z):
 
 class DCFNTM(nn.Module):
 
-    def __init__(self, config, usecheckpoint=None):
+    def __init__(self, config, usecheckpoint=None, x_cos_use=False, z_cos_use=False):
         super(DCFNTM, self).__init__()
         self.config = config
         self.feature = Feature(config)
         self.lambda0 = config.lambda0
+        self.x_cos_use = x_cos_use
+        self.z_cos_use = z_cos_use
         self.yf = config.yf.clone().requires_grad_(True)
         # self.label_sum = config.label_sum.clone().requires_grad_(True)
         if usecheckpoint is None:
@@ -54,6 +56,7 @@ class DCFNTM(nn.Module):
     def checkpoint_seg1_x(self, x_i):
         assert x_i.is_contiguous(), "view not contiguous"
         x = x_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0], self.config.img_input_size[1])
+
         xf_btcwh = self.feature(x)
         return xf_btcwh
 
@@ -71,6 +74,7 @@ class DCFNTM(nn.Module):
         else:
             z = z_i.view(self.config.batch * self.config.T, 3, self.config.img_input_size[0],
                          self.config.img_input_size[1])
+
         zf_btcwh = self.feature(z)
         return zf_btcwh
 
@@ -78,19 +82,31 @@ class DCFNTM(nn.Module):
         if self.config.apex_level == "O2" or self.config.apex_level == "O3":
             if h_0 is None or self.config.long_term:
                 if self.config.Spatial_NTM:
-                    h_0 = torch.zeros((self.config.batch,
-                                       self.config.dim_h_o +
-                                       len(self.config.Spatial_Bias_List) * self.config.key_feature_num),
-                                      dtype=torch.float).half()
+                    if self.config.mult_model:
+                        h_0 = torch.zeros((self.config.batch,
+                                           self.config.dim_h_o +
+                                           len(self.config.Spatial_Bias_List) * self.config.key_feature_num),
+                                          dtype=torch.float).half()
+                    else:
+                        h_0 = torch.zeros((self.config.batch,
+                                           self.config.dim_h_o +
+                                           len(self.config.Spatial_Bias_List)),
+                                          dtype=torch.float).half()
                 else:
                     h_0 = torch.zeros((self.config.batch, self.config.dim_h_o), dtype=torch.float).half()
         else:
             if h_0 is None or self.config.long_term:
                 if self.config.Spatial_NTM:
-                    h_0 = torch.zeros((self.config.batch,
-                                       self.config.dim_h_o +
-                                       len(self.config.Spatial_Bias_List) * self.config.key_feature_num),
-                                      dtype=torch.float)
+                    if self.config.mult_model:
+                        h_0 = torch.zeros((self.config.batch,
+                                           self.config.dim_h_o +
+                                           len(self.config.Spatial_Bias_List) * self.config.key_feature_num),
+                                          dtype=torch.float)
+                    else:
+                        h_0 = torch.zeros((self.config.batch,
+                                           self.config.dim_h_o +
+                                           len(self.config.Spatial_Bias_List)),
+                                          dtype=torch.float)
                 else:
                     h_0 = torch.zeros((self.config.batch, self.config.dim_h_o), dtype=torch.float)
 
@@ -124,8 +140,8 @@ class DCFNTM(nn.Module):
         if self.config.C_blur:
             c_btcwh = self.C_Blur(c_btcwh)
 
-        cfft = torch.rfft(c_btcwh * self.config.cos_window, signal_ndim=2)
-        zfft = torch.rfft(zf_btcwh * self.config.cos_window, signal_ndim=2)
+        cfft = torch.rfft(c_btcwh, signal_ndim=2)
+        zfft = torch.rfft(zf_btcwh, signal_ndim=2)
 
         if not self.config.direct_correlation:
             kzzf = torch.sum(torch.sum(cfft ** 2, dim=4, keepdim=True), dim=1, keepdim=True)
@@ -158,6 +174,11 @@ class DCFNTM(nn.Module):
         xf_btcwh = checkpoint(self.checkpoint_seg1_x, x_i)
         zf_btcwh = checkpoint(self.checkpoint_seg1_z, z_i)
 
+        if self.x_cos_use:
+            xf_btcwh = xf_btcwh * self.config.cos_window
+        if self.z_cos_use:
+            zf_btcwh = zf_btcwh * self.config.cos_window
+
         xf = checkpoint(self.checkpoint_seg1_x_premute, xf_btcwh)
 
         return self.checkpoint_seg_no_para(zf_btcwh, xf, h_0, c_0)
@@ -168,6 +189,7 @@ class DCFNTM(nn.Module):
         :return: N*T*C2_1*C2_2
         '''
         zf_btcwh = checkpoint(self.checkpoint_seg1_x, z_i)
+        zf_btcwh = zf_btcwh * self.config.cos_window
         zf = checkpoint(self.checkpoint_seg1_x_premute, zf_btcwh)
         return zf
 
