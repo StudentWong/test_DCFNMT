@@ -17,13 +17,15 @@ def load_json(filename):
 
 class TrackerConfig(object):
 
-    #data_root = '/home/lilium/caijihuzhuo/OTB_wh103_p1.0'
-    data_root = '/home/studentw/disk3/tracker/test_DCFNMT/OTB_wh103_p1.0'
+    data_root = '/home/lilium/caijihuzhuo/OTB_wh103_p1.0'
+    # data_root = '/home/studentw/disk3/tracker/test_DCFNMT/OTB_wh103_p1.0'
 
-    module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
-    #module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
+    # module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
+    module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
+    #
+    # save_path = '/home/studentw/disk3/tracker/test_DCFNMT/work6'
+    save_path = '/home/lilium/caijihuzhuo/test_DCFNMT/work6'
 
-    save_path = '/home/studentw/disk3/tracker/test_DCFNMT/work1'
     module_config_base = load_json(module_config_path)
     module_config = module_config_base["duke"]["default"]
 
@@ -34,9 +36,9 @@ class TrackerConfig(object):
     C_blur_inherit = True
     C_norm = True
     norm_learnable = True
-    long_term = False
+    long_term = True
     C_predict_loss = True
-    C_depress_loss = True
+    C_depress_loss = False
 
     if (not long_term) or C_predict_loss or C_depress_loss:
         assert multi_C_output, "error"

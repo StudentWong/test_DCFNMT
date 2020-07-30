@@ -1,7 +1,7 @@
 import torch.utils.data as data
 import torch
 from os.path import join, isdir, isfile
-from train.config import TrackerConfig
+#from train.config import TrackerConfig
 import cv2
 import json
 import glob
@@ -89,6 +89,8 @@ class VID(data.Dataset):
         else:
             z = np.zeros(shape=(self.T_len, 3, self.img_size[0], self.img_size[1]), dtype=np.float32)
 
+        if self.config.C_predict_loss:
+            z_temp = np.zeros(shape=(self.T_len, 3, self.img_size[0], self.img_size[1]), dtype=np.float32)
 
         x_bias = np.zeros(shape=(self.T_len, 2), dtype=np.int)
         if self.config.long_term:
@@ -181,13 +183,22 @@ class VID(data.Dataset):
             im = cv2.imread(temp_pathN[0])
             z[int((i-z_begin)/stride)] = np.transpose(im, (2, 0, 1)).astype(np.float32) - self.mean
 
+            if self.config.C_predict_loss:
+                z_temp_name = 'tp_f{:05d}.jpg'.format(i)
+                z_temp_path = join(self.root, folder_name, z_temp_name)
+                im_z_temp = cv2.imread(z_temp_path)
+                z_temp[int((i-z_begin)/stride)] = np.transpose(im_z_temp, (2, 0, 1)).astype(np.float32) - self.mean
+
             if self.train:
                 res[int((i-z_begin)/stride)] = gaussian_shaped_labels_bias(self.output_sigma,
                                                                   self.res_size,
                                                                   -z_bias[int((i-z_begin)/stride)])
 
         if self.train:
-            return x, z, res
+            if self.config.C_predict_loss:
+                return x, z, res, z_temp
+            else:
+                return x, z, res, -1
         else:
             return x, z
 

@@ -3,6 +3,7 @@ import os
 #os.chdir('/home/lilium/caijihuzhuo/test_DCFNMT')
 from os.path import join, isfile, isdir
 from os import makedirs
+from train.loss_calculator import LossCalculator
 import shutil
 import numpy as np
 import matplotlib.pyplot as plt
@@ -38,7 +39,7 @@ parser.add_argument('-j', '--workers', default=8, type=int, metavar='N',
 # parser.add_argument('--weight-decay', '--wd', default=1e-6, type=float,
 #                     metavar='W', help='weight decay (default: 5e-5)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH', help='path to latest checkpoint (default: none)')
-parser.add_argument('--config', '-c', type=str, help='directory for config')
+parser.add_argument('--config', '-c', default='train.config.TrackerConfig', type=str, help='directory for config')
 
 args = parser.parse_args()
 train_loss = []
@@ -69,7 +70,7 @@ print('GPU NUM: {:2d}'.format(gpu_num))
 if gpu_num > 1:
     model = torch.nn.DataParallel(model, list(range(gpu_num))).cuda()
 
-criterion = nn.MSELoss(size_average=False).cuda()
+criterion = LossCalculator(config).cuda()
 optimizer = torch.optim.Adam(model.parameters(), lr=config.lr, betas=(0.9, 0.99),
                              weight_decay=config.weight_decay)
 
@@ -159,7 +160,7 @@ def train(train_loader, model, criterion, optimizer, epoch, train_loss_plot):
     model.train()
 
     end = time.time()
-    for i, (template, search, response) in enumerate(train_loader):
+    for i, (template, search, response, ztemp) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -169,15 +170,31 @@ def train(train_loader, model, criterion, optimizer, epoch, train_loss_plot):
 
         # compute output
         if config.long_term:
-            output, c = model(template, search)
+            if config.multi_C_output:
+                output, c, c_hidden = model(template, search)
+            else:
+                output, c = model(template, search)
         else:
-            output = model(template, search)
+            if config.multi_C_output:
+                output, c_hidden = model(template, search)
+            else:
+                output = model(template, search)
         # print(output.shape)
         # print(response.shape)
-        loss = criterion(output, response) / (response.shape[0] * response.shape[1])  # criterion = nn.MSEloss
+        loss_response = criterion.response_loss(output, response)
 
+        loss = loss_response.clone()
+
+        if config.C_predict_loss:
+            assert type(ztemp) == torch.Tensor, "error"
+            ztemp = ztemp.cuda(non_blocking=True).requires_grad_(True)
+            zf = model.CNN_Z(ztemp)
+            loss = loss + config.lambda_C_predict*criterion.C_predict_loss(c_hidden, zf)
+
+        if config.C_depress_loss:
+            loss = loss + config.lambda_C_depress*criterion.C_depress_loss(c_hidden)
         # measure accuracy and record loss
-        losses.update(loss.item())
+        losses.update(loss_response.item())
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -194,11 +211,11 @@ def train(train_loader, model, criterion, optimizer, epoch, train_loss_plot):
         end = time.time()
 
         if i % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
+            print('Epoch: [{0}][{1}/{2}] SumLoss {3:.4f}\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
-                epoch, i, len(train_loader), batch_time=batch_time,
+                  'ResponseLoss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
+                epoch, i, len(train_loader), loss.item(), batch_time=batch_time,
                 data_time=data_time, loss=losses))
 
             train_loss_plot = train_loss_plot + [losses.val]
@@ -214,7 +231,7 @@ def validate(val_loader, model, criterion, val_loss_plot):
 
     with torch.no_grad():
         end = time.time()
-        for i, (template, search, response) in enumerate(val_loader):
+        for i, (template, search, response, ztemp) in enumerate(val_loader):
 
             # compute output
             template = template.cuda(non_blocking=True).requires_grad_(True)
@@ -223,29 +240,28 @@ def validate(val_loader, model, criterion, val_loss_plot):
 
             # compute output
             if config.long_term:
-                output, c = model(template, search)
+                if config.multi_C_output:
+                    output, c, c_hidden = model(template, search)
+                else:
+                    output, c = model(template, search)
             else:
-                output = model(template, search)
+                if config.multi_C_output:
+                    output, c_hidden = model(template, search)
+                else:
+                    output = model(template, search)
 
-            loss = criterion(output, response) / (response.shape[0] * response.shape[1] * gpu_num)
+            loss_response = criterion.response_loss(output, response)
 
+            loss = loss_response.clone()
 
-#            x = template.cpu().detach().numpy()[0]
-#            z = search.cpu().detach().numpy()[0]
-#            r = response.cpu().detach().numpy()[0]
+            if config.C_predict_loss:
+                assert type(ztemp) == torch.Tensor, "error"
+                ztemp = ztemp.cuda(non_blocking=True).requires_grad_(True)
+                zf = model.CNN_Z(ztemp)
+                loss = loss + config.lambda_C_predict * criterion.C_predict_loss(c_hidden, zf)
 
-#            for i in range(0, 2):
-#                cv2.imshow("1", (x[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
-#                cv2.waitKey(0)
-#                cv2.imshow("1", (z[i] + val_dataset.mean).transpose((1, 2, 0)).astype(np.uint8))
-#                cv2.waitKey(0)
-#                res = output.cpu().detach().numpy()[0][i]
-#                res = (res - np.ones_like(res) * np.min(res)) / (np.max(res) - np.min(res))
-#                print(res.shape)
-#                cv2.imshow("1", res)
-#                cv2.waitKey(0)
-#                cv2.imshow("1", (r[i]))
-#                cv2.waitKey(0)
+            if config.C_depress_loss:
+                loss = loss + config.lambda_C_depress * criterion.C_depress_loss(c_hidden)
 
             # measure accuracy and record loss
             losses.update(loss.item())
@@ -255,10 +271,10 @@ def validate(val_loader, model, criterion, val_loss_plot):
             end = time.time()
 
             if i % args.print_freq == 0:
-                print('Test: [{0}/{1}]\t'
+                print('Test: [{0}/{1}] SumLoss {loss.val:.4f} ({loss.avg:.4f}\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
-                    i, len(val_loader), batch_time=batch_time, loss=losses))
+                      'ResponseLoss {2:.4f})\t'.format(
+                    i, len(val_loader), loss_response.item(), batch_time=batch_time, loss=losses))
 
         val_loss_plot = val_loss_plot + [losses.avg]
         print(' * Loss {loss.val:.4f} ({loss.avg:.4f})'.format(loss=losses))

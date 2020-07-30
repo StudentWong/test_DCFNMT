@@ -7,7 +7,7 @@ from torch.utils.checkpoint import checkpoint
 import torch
 from train.modules.NTM import NTM
 from train.modules.feature import Feature
-from train.config import TrackerConfig
+
 from apex import amp
 from pytorch_gpu_memory.gpu_memory_log import gpu_memory_log
 from train.modules.common import FCN, norm_grad, Identity
@@ -232,14 +232,13 @@ def crop_chw(image, bbox, out_sz, padding=(0, 0, 0)):
     return np.transpose(crop, (2, 0, 1))
 
 
+from runs.config5 import TrackerConfig
+import glob
+
 if __name__ == "__main__":
 
-    base = '/home/studentw/disk3/tracker/DCFNet_pytorch/track/dataset'
-    dataset = 'OTB2013'
-    base_path = join(base, dataset)
-    json_path = join(base, dataset + '.json')
-    annos = json.load(open(json_path, 'r'))
-    videos = sorted(annos.keys())
+    base = '/home/studentw/disk3/OTB100/Human3/'
+    begin_num = 1
 
     use_gpu = True
     visualization = True
@@ -249,7 +248,7 @@ if __name__ == "__main__":
 
     # exit()
     net = DCFNTM(config).cuda()
-    ss = torch.load("/home/studentw/disk3/tracker/test_DCFNMT/work/multimodule_normC_.tar")
+    ss = torch.load("/home/studentw/work5/model_best.pth.tar")
     # for param_tensor in ss["state_dict"]:
     #     print(param_tensor)
     net.load_state_dict(ss["state_dict"])
@@ -257,125 +256,145 @@ if __name__ == "__main__":
 
     speed = []
     # loop videos
-    for video_id, video in enumerate(videos):  # run without resetting
-        video_path_name = annos[video]['name']
-        init_rect = np.array(annos[video]['init_rect']).astype(np.float)
-        image_files = [join(base_path, video_path_name, 'img', im_f) for im_f in annos[video]['image_files']]
-        n_images = len(image_files)
 
-        tic = time.time()  # time start
+    folder_frame_files = glob.glob(join(base, 'img', '*.jpg'))
+    folder_frame_num = len(folder_frame_files)
 
-        target_pos, target_sz = rect1_2_cxy_wh(init_rect)  # OTB label is 1-indexed
-        # print(image_files[0])
-        im = cv2.imread(image_files[0])  # HxWxC
+    # image_files = [join(base, 'img', 'img', im_f) for im_f in annos[video]['image_files']]
 
-        # confine results
-        # min_sz = np.maximum(config.min_scale_factor * target_sz, 4)
-        # max_sz = np.minimum(im.shape[:2], config.max_scale_factor * target_sz)
+    tic = time.time()  # time start
 
-        # crop template
-        window_sz = target_sz * (1 + config.padding)
-        bbox = cxy_wh_2_bbox(target_pos, window_sz)
-        patch = crop_chw(im, bbox, config.img_input_size[0])
-        temp_pos = target_sz
-        target = patch - config.net_average_image
+    target_pos = np.array([264 + 37 / 2, 311 + 69 / 2], dtype=np.float)
+    target_sz = np.array([37, 69], dtype=np.float)
+    # print(image_files[0])
+    image_files = join(base, 'img', '{:04d}.jpg'.format(begin_num))
+    im = cv2.imread(image_files)  # HxWxC
+
+    # confine results
+    # min_sz = np.maximum(config.min_scale_factor * target_sz, 4)
+    # max_sz = np.minimum(im.shape[:2], config.max_scale_factor * target_sz)
+
+    # crop template
+    window_sz = target_sz * (1 + config.padding)
+    bbox = cxy_wh_2_bbox(target_pos, window_sz)
+    patch = crop_chw(im, bbox, config.img_input_size[0])
+    # cv2.imshow("1", patch.transpose((1, 2, 0)))
+    # cv2.waitKey(0)
+    target = patch - config.net_average_image
+    temp = torch.tensor(target, dtype=torch.float).unsqueeze(0).unsqueeze(0).expand(1, config.T, 3,
+                                                                                    config.img_input_size[0],
+                                                                                    config.img_input_size[1])
+    hp = None
+    cp = None
+    # patch_crop = np.zeros((config.num_scale, patch.shape[0], patch.shape[1], patch.shape[2]), np.float32)
+    for f in range(1 + begin_num, folder_frame_num + begin_num):  # track
+        search_sz = target_sz * (1 + config.padding)
+        search_pos = target_pos
+        search_box = cxy_wh_2_bbox(search_pos, search_sz)
+
+        image_files = join(base, 'img', '{:04d}.jpg'.format(f))
+        im = cv2.imread(image_files)
+
+        search_show = crop_chw(im, search_box, config.img_input_size[0])
+        # cv2.imshow("1", search_show.transpose((1, 2, 0)))
+        # cv2.waitKey(0)
+
+        search_crop = crop_chw(im, search_box, config.img_input_size[0]) - config.net_average_image
+        search = torch.tensor(search_crop, dtype=torch.float).unsqueeze(0).unsqueeze(0)
+
+        # exit()
+
         with torch.no_grad():
-            # print(target.shape)
-            r, h, c, cb = net.forward_single(torch.tensor(target, dtype=torch.float32).cuda(),
-                                  torch.tensor(target, dtype=torch.float32).cuda())
+            response, c = net.forward(x_i=temp.cuda(), z_i=search.cuda(), c_0=cp)
+        # cview = c.permute(0, 2, 1).view((1, 32, 99, 99))
+        # cview = cview[0, 0:3, :, :].permute(1, 2, 0).cpu().detach().numpy()
+        # # cview = cview
+        # cview = (cview - np.ones_like(cview) * np.min(cview)) / (np.max(cview) - np.min(cview))
+        #
+        # cb = cb[0, 0:3, :, :].permute(1, 2, 0).cpu().detach().numpy()
+        # cb = (cb - np.ones_like(cb) * np.min(cb)) / (np.max(cb) - np.min(cb))
+        r = response.permute(0, 2, 3, 1).cpu().detach().numpy()
+        r = (r - np.ones_like(r) * np.min(r)) / (np.max(r) - np.min(r))
+        # print(r.shape)
+        cv2.imshow("r", r[0])
+        cv2.waitKey(0)
+        # exit()
+        # cv2.imshow("1", cview)
+        # cv2.waitKey(0)
+        # cv2.imshow("1", cb)
+        # cv2.waitKey(0)
+        # for i in range(config.num_scale):  # crop multi-scale search region
+        #     window_sz = target_sz * (config.scale_factor[i] * (1 + config.padding))
+        #     bbox = cxy_wh_2_bbox(target_pos, window_sz)
+        #     patch_crop[i, :] = crop_chw(im, bbox, config.crop_sz)
+        #
+        #     search = patch_crop[i, :] - config.net_average_image
+        #     response, h, c = net(torch.Tensor(search).cuda())
 
-        res = [cxy_wh_2_rect1(target_pos, target_sz)]  # save in .txt
-        # patch_crop = np.zeros((config.num_scale, patch.shape[0], patch.shape[1], patch.shape[2]), np.float32)
-        for f in range(1, n_images):  # track
-            temp_sz = target_sz * (1 + config.padding)
-            temp_box = cxy_wh_2_bbox(temp_pos, temp_sz)
-            temp_crop = crop_chw(im, temp_box, config.img_input_size[0]) - config.net_average_image
+        peak, idx = torch.max(response.view(1, -1), 1)
+        peak = peak.data.cpu().numpy()
+        # best_scale = np.argmax(peak)
+        r_max, c_max = np.unravel_index(idx.cpu(), config.net_input_size)
+        if r_max > config.net_input_size[0] / 2:
+            r_max = r_max - config.net_input_size[0]
+        #     if r_max[0] < -10:
+        #         r_max[0] = -10
+        # else:
+        #     if r_max[0] > 10:
+        #         r_max[0] = 10
 
-            im = cv2.imread(image_files[f])
-            window_sz = target_sz * (1 + config.padding)
-            bbox = cxy_wh_2_bbox(target_pos, window_sz)
-            search_crop = crop_chw(im, bbox, config.img_input_size[0])
-            print(c.cpu().numpy().var())
-            print(c.cpu().numpy().mean())
-            with torch.no_grad():
-                response, h, c, cb= net.forward_single(torch.tensor(temp_crop, dtype=torch.float32).cuda(),
-                                             torch.tensor(search_crop, dtype=torch.float32).cuda(),
-                                             h, c)
-            cview = c.permute(0, 2, 1).view((1, 32, 99, 99))
-            cview = cview[0, 0:3, :, :].permute(1, 2, 0).cpu().detach().numpy()
-            # cview = cview
-            cview = (cview - np.ones_like(cview) * np.min(cview)) / (np.max(cview) - np.min(cview))
+        if c_max > config.net_input_size[1] / 2:
+            c_max = c_max - config.net_input_size[1]
+        #     if c_max[0] < -10:
+        #         c_max[0] = -10
+        # else:
+        #     if c_max[0] > 10:
+        #         c_max[0] = 10
 
-            cb = cb[0, 0:3, :, :].permute(1, 2, 0).cpu().detach().numpy()
-            cb = (cb - np.ones_like(cb) * np.min(cb)) / (np.max(cb) - np.min(cb))
-            r = response.cpu().detach().numpy()
-            cv2.imshow("1", r[0])
+        window_sz = target_sz * (1 + config.padding)
+        # print(np.array([c_max[0], r_max[0]]))
+        # print(target_pos)
+        # print(np.array([c_max, r_max]) * window_sz) #/ config.img_input_size[0])
+        target_pos = target_pos + np.array([c_max[0], r_max[0]]) * window_sz / config.img_input_size[0]
+        # print(target_pos)
+        target_sz = window_sz / (1 + config.padding)
+
+        # model update
+        temp_latest_box = cxy_wh_2_bbox(target_pos, window_sz)
+        tempshow = crop_chw(im, temp_latest_box, config.img_input_size[0])
+        # cv2.imshow("1", tempshow.transpose((1, 2, 0)))
+        # cv2.waitKey(0)
+        # exit()
+        temp_latest_crop = crop_chw(im, temp_latest_box, config.img_input_size[0]) - config.net_average_image
+        temp_latest = torch.tensor(temp_latest_crop, dtype=torch.float)
+
+        temp_new = torch.zeros_like(temp, dtype=torch.float)
+        temp_new[:, 0:config.T-1, :, :, :] = temp[:, 1:config.T, :, :, :]
+        temp_new[0, config.T - 1, :, :, :] = temp_latest
+
+        # res.append(cxy_wh_2_rect1(target_pos, target_sz))  # 1-index
+        cp = c
+        if visualization:
+            im_show = cv2.cvtColor(im, cv2.COLOR_RGB2BGR)
+            cv2.rectangle(im_show, (int(target_pos[0] - target_sz[0] / 2), int(target_pos[1] - target_sz[1] / 2)),
+                          (int(target_pos[0] + target_sz[0] / 2), int(target_pos[1] + target_sz[1] / 2)),
+                          (0, 255, 0), 3)
+            cv2.putText(im_show, str(f), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+            cv2.imshow("1", im_show)
             cv2.waitKey(0)
-            cv2.imshow("1", cview)
-            cv2.waitKey(0)
-            cv2.imshow("1", cb)
-            cv2.waitKey(0)
-            # for i in range(config.num_scale):  # crop multi-scale search region
-            #     window_sz = target_sz * (config.scale_factor[i] * (1 + config.padding))
-            #     bbox = cxy_wh_2_bbox(target_pos, window_sz)
-            #     patch_crop[i, :] = crop_chw(im, bbox, config.crop_sz)
-            #
-            #     search = patch_crop[i, :] - config.net_average_image
-            #     response, h, c = net(torch.Tensor(search).cuda())
 
-            peak, idx = torch.max(response.view(1, -1), 1)
-            peak = peak.data.cpu().numpy()
-            # best_scale = np.argmax(peak)
-            r_max, c_max = np.unravel_index(idx.cpu(), config.net_input_size)
-            if r_max > config.net_input_size[0] / 2:
-                r_max = r_max - config.net_input_size[0]
-                if r_max[0] < -10:
-                    r_max[0] = -10
-            else:
-                if r_max[0] > 10:
-                    r_max[0] = 10
+    toc = time.time() - tic
+    fps = folder_frame_num / toc
+    speed.append(fps)
+    print('{:3d} Video: {:12s} Time: {:3.1f}s\tSpeed: {:3.1f}fps'.format(video_id, video, toc, fps))
 
-            if c_max > config.net_input_size[1] / 2:
-                c_max = c_max - config.net_input_size[1]
-                if c_max[0] < -10:
-                    c_max[0] = -10
-            else:
-                if c_max[0] > 10:
-                    c_max[0] = 10
-
-            window_sz = target_sz * (1 + config.padding)
-            # print(np.array([c_max[0], r_max[0]]))
-            # print(target_pos)
-            # print(np.array([c_max, r_max]) * window_sz) #/ config.img_input_size[0])
-            target_pos = target_pos + np.array([c_max[0], r_max[0]]) * window_sz / config.img_input_size[0]
-            # print(target_pos)
-            target_sz = window_sz / (1 + config.padding)
-
-            # model update
-
-            res.append(cxy_wh_2_rect1(target_pos, target_sz))  # 1-index
-
-            if visualization:
-                im_show = cv2.cvtColor(im, cv2.COLOR_RGB2BGR)
-                cv2.rectangle(im_show, (int(target_pos[0] - target_sz[0] / 2), int(target_pos[1] - target_sz[1] / 2)),
-                              (int(target_pos[0] + target_sz[0] / 2), int(target_pos[1] + target_sz[1] / 2)),
-                              (0, 255, 0), 3)
-                cv2.putText(im_show, str(f), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
-                cv2.imshow(video, im_show)
-                cv2.waitKey(0)
-
-        toc = time.time() - tic
-        fps = n_images / toc
-        speed.append(fps)
-        print('{:3d} Video: {:12s} Time: {:3.1f}s\tSpeed: {:3.1f}fps'.format(video_id, video, toc, fps))
-
-        # save result
-        test_path = join('result', dataset, 'DCFNet_test')
-        # if not isdir(test_path): makedirs(test_path)
-        result_path = join(test_path, video + '.txt')
-        with open(result_path, 'w') as f:
-            for x in res:
-                f.write(','.join(['{:.2f}'.format(i) for i in x]) + '\n')
+    # save result
+    test_path = join('result', dataset, 'DCFNet_test')
+    # if not isdir(test_path): makedirs(test_path)
+    result_path = join(test_path, video + '.txt')
+    with open(result_path, 'w') as f:
+        for x in res:
+            f.write(','.join(['{:.2f}'.format(i) for i in x]) + '\n')
 
     print('***Total Mean Speed: {:3.1f} (FPS)***'.format(np.mean(speed)))
 

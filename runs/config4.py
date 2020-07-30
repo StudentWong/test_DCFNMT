@@ -3,7 +3,7 @@ from pytorch_gpu_memory.gpu_memory_log import gpu_memory_log
 import torch
 from train.util import *
 import json
-from train.modules.NTM import NTM
+#from train.modules.Spatial_NTM import NTM
 
 
 def load_json(filename):
@@ -19,23 +19,47 @@ class TrackerConfig(object):
 
     data_root = '/home/lilium/caijihuzhuo/OTB_wh103_p1.0'
     # data_root = '/home/studentw/disk3/tracker/test_DCFNMT/OTB_wh103_p1.0'
-
+    #
     # module_config_path = "/home/studentw/disk3/tracker/test_DCFNMT/train/modules/module_config.json"
     module_config_path = "/home/lilium/caijihuzhuo/test_DCFNMT/train/modules/module_config.json"
-
+    #
     # save_path = '/home/studentw/disk3/tracker/test_DCFNMT/work4'
     save_path = '/home/lilium/caijihuzhuo/test_DCFNMT/work4'
     module_config_base = load_json(module_config_path)
     module_config = module_config_base["duke"]["default"]
 
+    Spatial_NTM = True
     mult_model = True
-    C_blur = False
-    C_Erase = True
-    C_blur_inherit = False
-    direct_correlation = False
+    C_blur = True
+    multi_C_output = True
+    C_blur_inherit = True
     C_norm = True
     norm_learnable = True
-    long_term = True
+    long_term = False
+    C_predict_loss = True
+    C_depress_loss = True
+
+    if (not long_term) or C_predict_loss or C_depress_loss:
+        assert multi_C_output, "error"
+
+    cos_esp = 1e-4
+    lambda_C_predict = 0.0001
+    lambda_C_depress = 0.00005
+
+    C_Erase = False
+    direct_correlation = False
+
+
+
+    if Spatial_NTM:
+        Spatial_r = 2
+        Spatial_Bias_List = []
+        for x in range(-Spatial_r, Spatial_r + 1):
+            for y in range(-Spatial_r, Spatial_r + 1):
+                if np.sqrt(x * x + y * y) <= Spatial_r:
+                    Spatial_Bias_List = Spatial_Bias_List + [[x, y]]
+
+    # print(Spatial_Bias_List)
 
     cnn_struct = module_config["cnn"]
 
@@ -54,11 +78,11 @@ class TrackerConfig(object):
     apex_level = "O0"
 
     adjust_lr = False
-    T = 15
-    batch = 12
+    T = 12
+    batch = 2
     data_use = 98
     lr = 5e-3
-    epochs = 250
+    epochs = 200
     weight_decay = 1e-6
 
     lambda0 = 1e-4
@@ -81,19 +105,20 @@ class TrackerConfig(object):
     #label_sum = yt.sum().cuda()
     yf = torch.rfft(yt.view(1, 1, w_CNN_out, h_CNN_out).cuda(), signal_ndim=2)
     #label_sum = label_sum.expand_as(yt.view(1, 1, w_CNN_out, h_CNN_out))
-    # cos_window = torch.Tensor(np.outer(np.hanning(crop_sz_y), np.hanning(crop_sz_x))).cuda()
+    cos_window = torch.Tensor(np.outer(np.hanning(h_CNN_out), np.hanning(w_CNN_out))).cuda()
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
 
-    #
-    #
-    #
-    #
+
+
+    print('{0}, {1:03d}'.format(1.2, 5))
+
     # o = TrackerConfig()
     # nmtcell = NTM(o,True).cuda()
     # C0 = torch.rand((o.batch, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*100
     # C0 = C0.cuda()
-    # h0 = torch.rand((o.batch, o.dim_h_o), dtype=torch.float)*100
+    # h0 = torch.rand((o.batch, o.dim_h_o+len(o.Spatial_Bias_List)*o.key_feature_num), dtype=torch.float)*100
+    # # h0 = torch.rand((o.batch, o.dim_h_o + len(o.Spatial_Bias_List)), dtype=torch.float) * 100
     # h0 = h0.cuda()
     #
     # CX = torch.rand((o.batch, o.T, o.dim_C2_1, o.dim_C2_2), dtype=torch.float)*1
@@ -101,7 +126,7 @@ class TrackerConfig(object):
     #
     #
     # h,c = nmtcell.forward_batch(h0, C0, CX)
-
+    #
     # print(h)
     # print(h.shape)
     # print(c)

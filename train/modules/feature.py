@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 # from torchsummary import summary
-from train.config import TrackerConfig
+#from train.config import TrackerConfig
 
 
 def act_func(func_name):
